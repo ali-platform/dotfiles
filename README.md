@@ -1,7 +1,7 @@
 Based on https://www.atlassian.com/git/tutorials/dotfiles
 
 First, follow the instructions for the Window Boxstarter scripts
-https://github.com/RobCannon/boxstarter
+https://github.com/ali-platform/boxstarter
 
 
 
@@ -9,7 +9,7 @@ Open a WSL session and run this batch of commands
 ```
 alias dotfiles='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
 git config --global credential.helper "/mnt/c/Program\ Files/Git/mingw64/bin/git-credential-manager.exe"
-git clone --bare "https://github.com/RobCannon/dotfiles.git" $HOME/.cfg
+git clone --bare "https://github.com/ali-platform/dotfiles.git" $HOME/.cfg
 dotfiles config --local status.showUntrackedFiles no
 dotfiles checkout -f main
 
