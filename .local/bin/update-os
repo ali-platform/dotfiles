@@ -4,6 +4,7 @@ set -e
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mUpdate apt\e[0m"
+sudo systemctl daemon-reload
 sudo DEBIAN_FRONTEND=noninteractive apt-get -yq update
 
 
