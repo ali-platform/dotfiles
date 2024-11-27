@@ -139,7 +139,8 @@ echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.i
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInstall dotnet PPA\e[0m"
-sudo add-apt-repository ppa:dotnet/backports
+sudo add-apt-repository ppa:dotnet/backports --yes
+
 
 
 echo ''
@@ -172,7 +173,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install \
   virtualenv \
   wslu \
   gh \
-  k6 \
   packer \
   nodejs \
   postgresql-client \
