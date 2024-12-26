@@ -166,8 +166,8 @@ echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInstalling common tools via apt\e[0m"
 sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install \
   dotnet-sdk-9.0 \
-  python3.13 \
-  python3.13-venv \
+  python3.14 \
+  python3.14-venv \
   python3-pip \
   python3-crcmod \
   virtualenv \
