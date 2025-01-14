@@ -91,6 +91,22 @@ fi
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating k6\e[0m"
+available_version=$(curl -s "https://api.github.com/repos/grafana/k6/releases/latest" | jq -r .tag_name | sed 's/v//')
+installed_version=$(k6 --version 2>/dev/null | awk '{print $2}' | sed 's/v//') || true
+if [ "$available_version" != "$installed_version" ]; then
+    package_name="k6-v${available_version}-linux-${arch}"
+    download_url=$(curl -s "https://api.github.com/repos/grafana/k6/releases/latest" | jq -r ".assets[] | select(.name | test(\"$package_name.tar.gz\")) | .browser_download_url")
+    curl -L $download_url -o ~/k6.tar.gz
+    tar zxf ~/k6.tar.gz -C ~/
+    mv ~/$package_name/k6 ~/.local/bin/k6
+    chmod +x ~/.local/bin/k6
+    rm -rf ~/$package_name
+    rm ~/k6.tar.gz
+fi
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mUpdating kustomize\e[0m"
 download_url=$(curl -s "https://api.github.com/repos/kubernetes-sigs/kustomize/releases/latest" | jq -r ".assets[] | select(.content_type == \"application/x-gtar\") | select(.name | test(\"linux_$arch\")) | .browser_download_url")
 curl -sL $download_url -o /tmp/kustomize.tar.gz
