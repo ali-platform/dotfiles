@@ -413,7 +413,7 @@ EOF
   echo -e "\e[36m======= Installing yarn packages\e[0m"
   fixup-pulumi
   yarn add @acceleratelearning/ali-pulumi
-  yarn remove @pulumi/awsx
+  yarn remove @pulumi/awsx --true
   yarn up
 
     # Initialize pulumi stacks where not DEFAULT_STACK
