@@ -92,10 +92,10 @@ $project_items += CloneRepos "AccelerateLearning" $repos $Refresh.IsPresent
 $repos = gh repo list ali-platform --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
 $project_items += CloneRepos "ali-platform" $repos $Refresh.IsPresent
 
-$repos = gh repo list ali-platform --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
+$repos = gh repo list ali-internal-systems --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
 $project_items += CloneRepos "ali-internal-systems" $repos $Refresh.IsPresent
 
-$repos = gh repo list ali-platform --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
+$repos = gh repo list stemscopes-v3 --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
 $project_items += CloneRepos "stemscopes-v3" $repos $Refresh.IsPresent
 
 # Create project manager file

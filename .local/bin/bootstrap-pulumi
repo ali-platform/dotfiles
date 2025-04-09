@@ -1,0 +1,472 @@
+#!/usr/bin/env bash
+set -e
+
+export AWS_REGION=us-east-2
+export AWS_PROFILE=$(jq -r '.stacks[] | select(.defaultStack == true) | .accountName' bootstrap.json)
+
+# Verify that AWS_PROFILE is in ~/.aws/config
+PROFILE=$(aws configure list-profiles | grep "\b$AWS_PROFILE\b")
+if [ -z "$PROFILE" ]
+then
+    echo -e "\e[31mProfile $AWS_PROFILE not found in ~/.aws/config\e[0m"
+    exit 1
+fi
+aws sso login
+
+# Get the current folder name
+export REPO_NAME=${PWD##*/}
+
+echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
+ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
+if [[ -z "$ROLE" ]]
+then
+  echo -e "\e[31mRole ghr-${REPO_NAME} not found\e[0m"
+  echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
+  exit 1
+fi
+
+
+echo -e "\e[36m======= Getting latest from default branch\e[0m"
+DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5)
+git checkout $DEFAULT_BRANCH
+git pull origin $DEFAULT_BRANCH
+
+STACK_NAMES=$(jq -r '.stacks[] | .stackName' bootstrap.json)
+
+
+aws sso login
+cluster_name=$(aws eks list-clusters --query clusters[0] --output text)
+if [[ "$cluster_name" != "None" ]]
+then
+    aws eks update-kubeconfig --region us-east-2 --name $cluster_name --alias $cluster_name
+fi
+
+
+
+mkdir -p .vscode
+cat << EOF > ".vscode/settings.json"
+{
+  "git.branchProtection": [
+    "main"
+  ],
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": [
+      "file:.github/workflows/*.yaml"
+    ]
+  },
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "editor.insertSpaces": true,
+  "editor.autoIndent": "keep",
+  "files.autoSave": "onFocusChange",
+  "editor.tabSize": 2,
+  "vs-code-prettier-eslint.prettierLast": false,
+  "[typescript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "ms-kubernetes-tools.vscode-kubernetes-tools"
+  },
+  "[helm]": {
+    "editor.defaultFormatter": "ms-kubernetes-tools.vscode-kubernetes-tools"
+  },
+  "cSpell.words": [
+    "acceleratelearning",
+    "accessanalyzer",
+    "acmpca",
+    "alertmanager",
+    "aoss",
+    "apiextensions",
+    "applicationloadbalancing",
+    "argocd",
+    "argoproj",
+    "autoscale",
+    "autoscaler",
+    "autotag",
+    "awskms",
+    "awsx",
+    "backoff",
+    "bitnami",
+    "bootstrappers",
+    "Bypassers",
+    "cdms",
+    "chatwork",
+    "clientvpn",
+    "cloudhsmv2",
+    "clusterrole",
+    "codeartifact",
+    "codeartifactaccess",
+    "codestarnotifications",
+    "Coip",
+    "coredns",
+    "crds",
+    "creds",
+    "crio",
+    "csistoragecapacities",
+    "dataplane",
+    "dbuser",
+    "demoapp",
+    "directoryservice",
+    "docdb",
+    "dualstack",
+    "EBSCSI",
+    "eksbuild",
+    "elasticloadbalancingv",
+    "elbv",
+    "encryptedkey",
+    "endpointslices",
+    "fargate",
+    "github",
+    "graphana",
+    "healthcheck",
+    "healthz",
+    "ingressgateway",
+    "Iscsi",
+    "istio",
+    "istiod",
+    "karpenter",
+    "kubeconfig",
+    "kubelet",
+    "kustomize",
+    "learnosity",
+    "licensemanager",
+    "limitranges",
+    "loadbalancer",
+    "logtag",
+    "maildev",
+    "mathnation",
+    "networkpolicies",
+    "Nodegroup",
+    "npmjs",
+    "oidc",
+    "oidcs",
+    "oneroster",
+    "persistentvolumeclaims",
+    "poddisruptionbudgets",
+    "podtemplates",
+    "portforward",
+    "promtail",
+    "pulumi",
+    "pulumibucketaccess",
+    "pulumikeyaccess",
+    "pulumiobjectaccess",
+    "rebalance",
+    "replicasets",
+    "replicationcontrollers",
+    "resourcegroups",
+    "resourcequotas",
+    "restrictor",
+    "rolebindings",
+    "secretsprovider",
+    "serverside",
+    "serviceaccount",
+    "serviceaccounts",
+    "ssoadmin",
+    "statefulsets",
+    "stemscopes",
+    "storageclass",
+    "studyedge",
+    "targetgroup",
+    "transitgateway",
+    "validationRecordFqdns",
+    "wafregional",
+    "wafv",
+    "xvda",
+    "xvdb",
+    "xvdc",
+    "ztunnel"
+  ]
+}
+EOF
+
+
+echo -e "\e[36m======= Updating VS Code settings file with protected branches\e[0m"
+JSON_NAMES=$(echo $STACK_NAMES | jq -R 'split(" ")' | jq -c '.')
+jq --argjson json_names "$JSON_NAMES" '."git.branchProtection" |= $json_names' .vscode/settings.json > tmp.json && mv tmp.json .vscode/settings.json
+
+
+echo -e "\e[36m======= Creating dependabot configuration\e[0m"
+mkdir -p .github
+cat << EOF > .github/dependabot.yml
+version: 2
+registries:
+  npm-npmjs:
+    type: npm-registry
+    url:  https://npm.pkg.github.com/acceleratelearning/
+    token: \${{ secrets.ALI_GITHUB_PACKAGE_READER_TOKEN }}
+    replaces-base: true
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: dev
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: dev
+    allow:
+    - dependency-type: direct
+    - dependency-type: production
+    registries:
+      - npm-npmjs
+EOF
+
+
+
+echo -e "\e[36m======= Creating pull request workflow\e[0m"
+mkdir -p .github/workflows
+rm -f .github/workflows/pulumi-pull-request.yaml
+rm -f .github/workflows/platform-pull-request.yaml
+cat << EOF > .github/workflows/pull-request-checks.yaml
+name: Pull Request Checks
+on:
+  pull_request:
+    paths-ignore:
+      - .vscode/**
+      - .gitignore
+      - README.md
+jobs:
+  pull-request-checks:
+    name: Pull Request Checks
+    uses: acceleratelearning/workflow-pull-request-checks/.github/workflows/shared-workflow.yaml@v3
+    with:
+      stack-name: \${{ github.event.pull_request.base.ref }}
+      dependabot-automerge-enabled: true
+    secrets:
+      yarn-auth-token: \${{ secrets.ALI_GITHUB_PACKAGE_READER_TOKEN }}
+      github-repo-updater-app-id: \${{ secrets.ALI_GITHUB_REPO_UPDATER_APP_ID }}
+      github-repo-updater-app-key: \${{ secrets.ALI_GITHUB_REPO_UPDATER_APP_KEY }}
+EOF
+
+# Configure Pull Request Checks workflow for Pulumi
+if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "false" ]]
+then
+  cat << EOF >> .github/workflows/pull-request-checks.yaml
+      pulumi-check: false
+EOF
+fi
+
+# Configure Pull Request Checks workflow for ArgoCD
+if [[ "$(jq -r '.useArgoCD' bootstrap.json)" == "false" ]]
+then
+  cat << EOF >> .github/workflows/pull-request-checks.yaml
+      argocd-check: false
+EOF
+fi
+
+# Finish creating Pull Request Checks workflow
+cat << EOF >> .github/workflows/pull-request-checks.yaml
+    secrets:
+      yarn-auth-token: \${{ secrets.ALI_GITHUB_PACKAGE_READER_TOKEN }}
+EOF
+
+
+if [[ "$(jq -r '.useArgoCD' bootstrap.json)" == "true" ]]
+then
+  echo -e "\e[36m======= Creating default ArgoCD files\e[0m"
+  # Trim "platform-" from the beginning of the repo name
+  APP_NAME=${REPO_NAME#platform-}
+
+  # Create ArgoCD configuration
+  mkdir -p argocd
+  mkdir -p "argocd/${APP_NAME}"
+  mkdir -p "argocd/${APP_NAME}/templates"
+
+  cat << EOF > "argocd/${APP_NAME}/Chart.yaml"
+apiVersion: v2
+name: ${APP_NAME}
+description: A Helm chart for ${APP_NAME} to be used in ArgoCD
+type: application
+version: 1.0.0
+appVersion: 1.0.0
+EOF
+
+
+  if [ ! -f "argocd/${APP_NAME}/templates/deployment.yaml" ]; then
+    touch "argocd/${APP_NAME}/templates/deployment.yaml"
+  fi
+
+  echo -e "\e[36m======= Creating default ArgoCD value files\e[0m"
+  if [ ! -f "argocd/${APP_NAME}/values.yaml" ]; then
+  cat << EOF > "argocd/${APP_NAME}/values.yaml"
+replicas: 2
+tag: 0.0.1
+EOF
+  fi
+
+  for stack in $STACK_NAMES; do
+    if [ ! -f "argocd/${APP_NAME}/values-${stack}.yaml" ]; then
+    cat << EOF > "argocd/${APP_NAME}/values-${stack}.yaml"
+environmentName: ${stack}
+accountName: $(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
+accountId: "$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)"
+EOF
+    fi
+  done
+fi
+
+
+
+if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
+then
+  echo -e "\e[36m======= Creating workflows for Pulumi\e[0m"
+  mkdir -p .github/workflows
+  echo -e "\e[36m======= Create GitHub workflows for Pulumi\e[0m"
+  for stack in $STACK_NAMES; do
+    ACCOUNT_ID=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)
+    ACCOUNT_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
+    cat << EOF > .github/workflows/pulumi-up-${stack}.yaml
+name: Pulumi Up ${stack}
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ${stack}
+    paths-ignore:
+      - argocd/**
+      - .vscode/**
+      - .gitignore
+      - README.md
+  schedule:
+    - cron: "0 13 * * *"
+jobs:
+  pulumi-up:
+    name: Pulumi Up ${stack}
+    uses: acceleratelearning/workflow-pulumi-up/.github/workflows/shared-workflow.yaml@v4
+    with:
+      role-to-assume: arn:aws:iam::${ACCOUNT_ID}:role/ghr-${REPO_NAME}
+      stack-name: ${stack}
+    secrets:
+      yarn-auth-token: \${{ secrets.ALI_GITHUB_PACKAGE_READER_TOKEN }}
+EOF
+  done
+
+  echo -e "\e[36m======= Initializing Pulumi project\e[0m"
+  pulumi login "s3://ali-pulumi/${REPO_NAME}?region=us-east-2"
+
+  # Get pulumi stacks but ignore errors and redirect to /dev/null
+  set +e
+  PULUMI_STACKS=$(pulumi stack ls --json 2> /dev/null)
+  set -e
+  DEFAULT_STACK=$(jq -r '.stacks[] | select(.defaultStack == true) | .stackName' bootstrap.json)
+
+  if [[ -z "$PULUMI_STACKS" ]]
+  then
+    echo -e "\e[36m======= Creating Pulumi project for $DEFAULT_STACK stack\e[0m"
+    export PULUMI_PREFER_YARN=true
+    pulumi new aws-typescript \
+      --name "${REPO_NAME}" \
+      --secrets-provider "awskms:///arn:aws:kms:us-east-2:308585226687:key/mrk-d6f85e88dffe4a92848fee95ea4b6e63" \
+      --stack ${DEFAULT_STACK} \
+      --description "Stack for ${REPO_NAME} resources" \
+      --config aws:region="${AWS_REGION}" \
+      --force
+
+    # Reverse some changes from pulumi new
+    rm -rf package-lock.json
+
+    echo -e "\e[36m======= Creating default pulumi program\e[0m"
+    cat << EOF > "index.ts"
+import * as pulumi from '@pulumi/pulumi';
+import * as ali from '@acceleratelearning/ali-pulumi';
+import * as aws from '@pulumi/aws';
+import { Config } from './config';
+
+const config = new pulumi.Config().requireObject<Config>('config');
+const stackName = pulumi.getStack();
+
+ali.registerAutoTags(config);
+EOF
+
+    cat << EOF > "config.ts"
+export type Config = {
+  accountName: string;
+  autoTags?: Record<string, string>;
+};
+EOF
+  fi
+
+  echo -e "\e[36m======= Make sure Typescript is configured correctly\e[0m"
+  yq -i ".backend.url |= \"s3://ali-pulumi/${REPO_NAME}?region=us-east-2\"" Pulumi.yaml
+
+  # Make sure project requires a current version of node
+  echo "`jq '.engines.node=">=20.0.0"' package.json`" > package.json
+  echo "`jq '.engines.npm=">=9.0.0"' package.json`" > package.json
+  echo "`jq '.license="UNLICENSED"' package.json`" > package.json
+
+  # Add packages
+  echo -e "\e[36m======= Installing yarn packages\e[0m"
+  fixup-typescript
+  yarn add @acceleratelearning/ali-pulumi
+  yarn remove @pulumi/awsx
+  yarn up
+
+    # Initialize pulumi stacks where not DEFAULT_STACK
+  echo -e "\e[36m======= Inializing other Pulumi stacks\e[0m"
+  PULUMI_STACKS=$(pulumi stack ls --json 2> /dev/null)
+  STACK_NAMES=$(jq -r '.stacks[] | .stackName' bootstrap.json)
+  for stack in $STACK_NAMES; do
+    if [[ "$stack" != "$(echo $PULUMI_STACKS | jq -r '.[] | select(.name == "'${stack}'") | .name')" ]]
+    then
+      pulumi stack init $stack \
+        --secrets-provider "awskms:///arn:aws:kms:us-east-2:308585226687:key/mrk-d6f85e88dffe4a92848fee95ea4b6e63"
+    fi
+  done
+
+  echo -e "\e[36m======= Setting default config for Pulumi stacks\e[0m"
+  for stack in $STACK_NAMES; do
+    # Set config for all stacks
+    ACCOUNT_ID=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)
+    ACCOUNT_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
+    pulumi config set aws:region "${AWS_REGION}" --stack $stack
+    pulumi config set --path aws:allowedAccountIds[0] "${ACCOUNT_ID}" --stack $stack
+    pulumi config set aws-native:region "${AWS_REGION}" --stack $stack
+    pulumi config set --path config.accountName "${ACCOUNT_NAME}" --stack $stack
+    pulumi config set --path config.autoTags.aws-migration-project-id "MPE31754" --stack $stack
+  done
+fi
+
+echo -e "\e[36m======= Adding files to commit\e[0m"
+git add .
+echo -e "\e[36m======= Committing files to $DEFAULT_BRANCH\e[0m"
+git commit -m "Fixing up stacks"
+echo -e "\e[36m======= Pushing commit to $DEFAULT_BRANCH\e[0m"
+git push
+
+WORKING_STACK=$(jq -r '.stacks[] | select(.workingStack == true) | .stackName' bootstrap.json)
+OTHER_STACK_NAMES=$(jq -r '.stacks[] | select(.defaultStack != true) | .stackName' bootstrap.json)
+for stack in $OTHER_STACK_NAMES; do
+  echo -e "\e[36m======= Checking out $stack\e[0m"
+  git checkout $stack
+  git pull
+  set +e
+  git merge $DEFAULT_BRANCH
+  set -e
+  if [ $? -eq 0 ]
+  then
+    echo -e "\e[32m======= Pushing commit to $stack\e[0m"
+    git push
+  else
+    git merge --abort
+    echo -e "\e[31m======= Failed to merge $DEFAULT_BRANCH to $stack\e[0m"
+    exit 1
+  fi
+done
+
+echo -e "\e[32m======= Checking out working stack $WORKING_STACK\e[0m"
+git checkout $WORKING_STACK
+pulumi stack select $WORKING_STACK
