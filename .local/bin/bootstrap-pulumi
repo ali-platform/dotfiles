@@ -374,7 +374,8 @@ EOF
       --stack ${DEFAULT_STACK} \
       --description "Stack for ${REPO_NAME} resources" \
       --config aws:region="${AWS_REGION}" \
-      --force
+      --force \
+      --yes
 
     # Reverse some changes from pulumi new
     rm -rf package-lock.json
@@ -410,7 +411,7 @@ EOF
 
   # Add packages
   echo -e "\e[36m======= Installing yarn packages\e[0m"
-  fixup-typescript
+  fixup-pulumi
   yarn add @acceleratelearning/ali-pulumi
   yarn remove @pulumi/awsx
   yarn up
