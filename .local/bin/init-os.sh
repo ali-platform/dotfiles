@@ -94,6 +94,26 @@ wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo t
 sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
 
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstall Microsoft signing key \e[0m"
+sudo mkdir -p /etc/apt/keyrings
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc |
+  gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstall Azure CLI software repository \e[0m"
+AZ_DIST=$(lsb_release -cs)
+echo "Types: deb
+URIs: https://packages.microsoft.com/repos/azure-cli/
+Suites: ${AZ_DIST}
+Components: main
+Architectures: $(dpkg --print-architecture)
+Signed-by: /etc/apt/keyrings/microsoft.gpg" | sudo tee /etc/apt/sources.list.d/azure-cli.sources
+
 # echo ''
 # echo -e "\e[1;36m------\e[0m"
 # echo -e "\e[1;36mInstall Microsoft Packages source\e[0m"
@@ -175,6 +195,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install \
   gh \
   packer \
   nodejs \
+  azure-cli \
   postgresql-client \
   mysql-client
 
