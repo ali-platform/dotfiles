@@ -65,6 +65,11 @@ function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
     }
 }
 
+function CloneOrgRepos([string]$org, [bool]$refresh) {
+    $repos = gh repo list $org --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
+    CloneRepos $org $repos $Refresh
+}
+
 
 if ($env:APPDATA) {
     $github_profile = (Get-Content "$($env:APPDATA)/GitHub CLI/hosts.yml" | ConvertFrom-Yaml).'github.com'.user
@@ -86,17 +91,11 @@ $repos = @(
 $project_items += CloneRepos $github_profile $repos $Refresh.IsPresent
 
 
-$repos = gh repo list AccelerateLearning --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
-$project_items += CloneRepos "AccelerateLearning" $repos $Refresh.IsPresent
+$project_items += CloneOrgRepos "AccelerateLearning" $Refresh.IsPresent
+$project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
+$project_items += CloneOrgRepos "ali-back-office" $Refresh.IsPresent
+$project_items += CloneOrgRepos "stemscopes-v3" $Refresh.IsPresent
 
-$repos = gh repo list ali-platform --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
-$project_items += CloneRepos "ali-platform" $repos $Refresh.IsPresent
-
-$repos = gh repo list ali-back-office --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
-$project_items += CloneRepos "ali-back-office" $repos $Refresh.IsPresent
-
-$repos = gh repo list stemscopes-v3 --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
-$project_items += CloneRepos "stemscopes-v3" $repos $Refresh.IsPresent
 
 # Create project manager file
 $path = "$($env:USERPROFILE)/AppData/Roaming/Code/User/globalStorage/alefragnani.project-manager"
