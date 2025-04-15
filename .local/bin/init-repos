@@ -92,8 +92,9 @@ $project_items += CloneRepos $github_profile $repos $Refresh.IsPresent
 
 
 $project_items += CloneOrgRepos "AccelerateLearning" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-back-office" $Refresh.IsPresent
+$project_items += CloneOrgRepos "ali-marketing" $Refresh.IsPresent
+$project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
 $project_items += CloneOrgRepos "stemscopes-v3" $Refresh.IsPresent
 
 
