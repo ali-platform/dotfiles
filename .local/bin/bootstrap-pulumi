@@ -464,4 +464,8 @@ done
 
 echo -e "\e[32m======= Checking out working stack $WORKING_STACK\e[0m"
 git checkout $WORKING_STACK
-pulumi stack select $WORKING_STACK
+
+if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
+then
+  pulumi stack select $WORKING_STACK
+fi
