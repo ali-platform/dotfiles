@@ -16,13 +16,16 @@ aws sso login
 # Get the current folder name
 export REPO_NAME=${PWD##*/}
 
-echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
-ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
-if [[ -z "$ROLE" ]]
+if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
 then
-  echo -e "\e[31mRole ghr-${REPO_NAME} not found\e[0m"
-  echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
-  exit 1
+  echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
+  ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
+  if [[ -z "$ROLE" ]]
+  then
+    echo -e "\e[31mRole ghr-${REPO_NAME} not found in profile $PROFILE\e[0m"
+    echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
+    exit 1
+  fi
 fi
 
 
@@ -305,9 +308,6 @@ EOF
   for stack in $STACK_NAMES; do
     if [ ! -f "argocd/${APP_NAME}/values-${stack}.yaml" ]; then
     cat << EOF > "argocd/${APP_NAME}/values-${stack}.yaml"
-environmentName: ${stack}
-accountName: $(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
-accountId: "$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)"
 EOF
     fi
   done
