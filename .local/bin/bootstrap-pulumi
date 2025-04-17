@@ -131,6 +131,8 @@ cat << EOF > ".vscode/settings.json"
     "encryptedkey",
     "endpointslices",
     "fargate",
+    "finalizer",
+    "finalizers",
     "github",
     "graphana",
     "healthcheck",
@@ -431,7 +433,6 @@ EOF
     pulumi config set --path aws:allowedAccountIds[0] "${ACCOUNT_ID}" --stack $stack
     pulumi config set aws-native:region "${AWS_REGION}" --stack $stack
     pulumi config set --path config.accountName "${ACCOUNT_NAME}" --stack $stack
-    pulumi config set --path config.autoTags.aws-migration-project-id "MPE31754" --stack $stack
   done
 fi
 
