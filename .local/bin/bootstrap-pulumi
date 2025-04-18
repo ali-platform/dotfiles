@@ -198,7 +198,7 @@ EOF
 
 
 echo -e "\e[36m======= Updating VS Code settings file with protected branches\e[0m"
-JSON_NAMES=$(echo $STACK_NAMES | jq -R 'split(" ")' | jq -c '.')
+JSON_NAMES=$(jq -r '.stacks[] | select(.workingStack != true) | .stackName' bootstrap.json | jq -R 'split(" ")' | jq -c '.')
 jq --argjson json_names "$JSON_NAMES" '."git.branchProtection" |= $json_names' .vscode/settings.json > tmp.json && mv tmp.json .vscode/settings.json
 
 
