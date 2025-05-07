@@ -383,10 +383,8 @@ import * as ali from '@acceleratelearning/ali-pulumi';
 import * as aws from '@pulumi/aws';
 import { Config } from './config';
 
-const config = new pulumi.Config().requireObject<Config>('config');
+const config = ali.getConfig<Config>();
 const stackName = pulumi.getStack();
-
-ali.registerAutoTags(config);
 EOF
 
     cat << EOF > "config.ts"
