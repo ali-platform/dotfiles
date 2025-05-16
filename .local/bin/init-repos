@@ -66,7 +66,7 @@ function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
 }
 
 function CloneOrgRepos([string]$org, [bool]$refresh) {
-    $repos = gh repo list $org --no-archived --json "name,url" --limit 300 | ConvertFrom-Json | Sort-Object name
+    $repos = gh repo list $org --no-archived --json "name,url" --limit 500 | ConvertFrom-Json | Sort-Object name
     CloneRepos $org $repos $Refresh
 }
 
