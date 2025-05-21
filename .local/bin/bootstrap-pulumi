@@ -37,7 +37,6 @@ git pull origin $DEFAULT_BRANCH
 STACK_NAMES=$(jq -r '.stacks[] | .stackName' bootstrap.json)
 
 
-aws sso login
 cluster_name=$(aws eks list-clusters --query clusters[0] --output text)
 if [[ "$cluster_name" != "None" ]]
 then
@@ -198,8 +197,8 @@ EOF
 
 
 echo -e "\e[36m======= Updating VS Code settings file with protected branches\e[0m"
-JSON_NAMES=$(jq -r '.stacks[] | select(.workingStack != true) | .stackName' bootstrap.json | jq -R 'split(" ")' | jq -c '.')
-jq --argjson json_names "$JSON_NAMES" '."git.branchProtection" |= $json_names' .vscode/settings.json > tmp.json && mv tmp.json .vscode/settings.json
+JSON_NAMES=$(jq -c '[.stacks[] | select(.workingStack != true) | .stackName]' bootstrap.json)
+jq --argjson json_names "$JSON_NAMES" '."git.branchProtection" |= $json_names' .vscode/settings.json > tmp.json && cp tmp.json .vscode/settings.json && rm tmp.json
 
 
 echo -e "\e[36m======= Creating dependabot configuration\e[0m"
@@ -402,11 +401,12 @@ EOF
   echo "`jq '.engines.node=">=20.0.0"' package.json`" > package.json
   echo "`jq '.engines.npm=">=9.0.0"' package.json`" > package.json
   echo "`jq '.license="UNLICENSED"' package.json`" > package.json
+  echo "`jq '.packageManager="yarn@4.9.1"' package.json`" > package.json
 
   # Add packages
   echo -e "\e[36m======= Installing yarn packages\e[0m"
   fixup-pulumi
-  yarn add @acceleratelearning/ali-pulumi
+  yarn add @acceleratelearning/ali-pulumi --non-interactive
   yarn remove @pulumi/awsx | true
   yarn up
 
