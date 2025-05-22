@@ -379,18 +379,18 @@ EOF
     cat << EOF > "index.ts"
 import * as pulumi from '@pulumi/pulumi';
 import * as ali from '@acceleratelearning/ali-pulumi';
-import * as aws from '@pulumi/aws';
 import { Config } from './config';
 
 const config = ali.getConfig<Config>();
-const stackName = pulumi.getStack();
 EOF
 
     cat << EOF > "config.ts"
-export type Config = {
-  accountName: string;
-  autoTags?: Record<string, string>;
-};
+import * as ali from '@acceleratelearning/ali-pulumi';
+
+export interface Config extends ali.BaseConfig {
+  k8sClusterName: string;
+  partOf: string;
+}
 EOF
   fi
 
@@ -427,10 +427,12 @@ EOF
     # Set config for all stacks
     ACCOUNT_ID=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)
     ACCOUNT_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
+    K8S_CLUSTER_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .argoCdAccountName' bootstrap.json)
     pulumi config set aws:region "${AWS_REGION}" --stack $stack
     pulumi config set --path aws:allowedAccountIds[0] "${ACCOUNT_ID}" --stack $stack
     pulumi config set aws-native:region "${AWS_REGION}" --stack $stack
-    pulumi config set --path config.accountName "${ACCOUNT_NAME}" --stack $stack
+    pulumi config set --path stack.accountName "${ACCOUNT_NAME}" --stack $stack
+    pulumi config set --path stack.k8sClusterName "${K8S_CLUSTER_NAME}" --stack $stack
   done
 fi
 
