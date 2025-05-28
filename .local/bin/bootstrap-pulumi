@@ -410,7 +410,7 @@ EOF
   # Add packages
   echo -e "\e[36m======= Installing yarn packages\e[0m"
   fixup-pulumi
-  yarn add @acceleratelearning/ali-pulumi --non-interactive
+  yarn add @acceleratelearning/ali-pulumi
   yarn remove @pulumi/awsx | true
   yarn up
 
