@@ -18,13 +18,17 @@ export REPO_NAME=${PWD##*/}
 
 if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
 then
-  echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
-  ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
-  if [[ -z "$ROLE" ]]
-  then
-    echo -e "\e[31mRole ghr-${REPO_NAME} not found in profile $PROFILE\e[0m"
-    echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
-    exit 1
+  if [[ "$REPO_NAME" == aws-account* ]]; then
+    echo -e "\e[33mSkipping IAM role verification for GitHub actions - REPO_NAME starts with 'aws-account'\e[0m"
+  else
+    echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
+    ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
+    if [[ -z "$ROLE" ]]
+    then
+      echo -e "\e[31mRole ghr-${REPO_NAME} not found in profile $PROFILE\e[0m"
+      echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
+      exit 1
+    fi
   fi
 fi
 
