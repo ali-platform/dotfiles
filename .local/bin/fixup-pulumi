@@ -307,6 +307,31 @@ if (Test-Path .yarn/install-state.gz) {
     Remove-Item .yarn/install-state.gz
 }
 
+if (Test-Path .vscode/.copilot-instructions.md) {
+    Write-Host -ForegroundColor Cyan "Moving .vscode/.copilot-instructions.md to .github/.copilot-instructions.md"
+    Move-Item .vscode/.copilot-instructions.md .github/.copilot-instructions.md -Force
+}
+
+if (-Not (Test-Path .github/.copilot-instructions.md)) {
+    Write-Host -ForegroundColor Cyan "Creating .github/.copilot-instructions.md"
+@'
+# Copilot Instructions
+
+This project is a Pulumi project written in typescript that support the creation of infrastructure in AWS.
+There is also a directory, argocd, that has Kubernetes resources that are deployed via ArgoCD.  They are organization as a helm chart.
+
+## Coding Standards
+
+- Use 2 spaces for indentation.
+- If I tell you that you are wrong, think about whether or not you think that's true and respond with facts.
+- Avoid apologizing or making conciliatory statements.
+- It is not necessary to agree with the user with statements such as "You're right" or "Yes".
+- Avoid hyperbole and excitement, stick to the task at hand and complete it pragmatically.
+'@ | Set-Content .github/.copilot-instructions.md
+}
+
+yq -i ".runtime.options.packagemanager |= \"yarn\"" Pulumi.yaml
+
 Get-ChildItem *.yaml -ErrorAction SilentlyContinue | ForEach-Object {
     $file = $_
     Write-Host -ForegroundColor Cyan "Updating $file"

@@ -400,6 +400,8 @@ EOF
 
   echo -e "\e[36m======= Make sure Typescript is configured correctly\e[0m"
   yq -i ".backend.url |= \"s3://ali-pulumi/${REPO_NAME}?region=us-east-2\"" Pulumi.yaml
+  yq -i ".runtime.options.packagemanager |= \"yarn\"" Pulumi.yaml
+  yq -i ".config.project.value.partOf |= \"placeholder\"" Pulumi.yaml
 
   # Make sure project requires a current version of node
   echo "`jq '.engines.node=">=20.0.0"' package.json`" > package.json
@@ -425,6 +427,8 @@ EOF
         --secrets-provider "awskms:///arn:aws:kms:us-east-2:308585226687:key/mrk-d6f85e88dffe4a92848fee95ea4b6e63"
     fi
   done
+
+  pulumi config set --path runtime.options.packagemanager "yarn"
 
   echo -e "\e[36m======= Setting default config for Pulumi stacks\e[0m"
   for stack in $STACK_NAMES; do
