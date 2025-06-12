@@ -330,7 +330,7 @@ There is also a directory, argocd, that has Kubernetes resources that are deploy
 '@ | Set-Content .github/.copilot-instructions.md
 }
 
-yq -i ".runtime.options.packagemanager |= \"yarn\"" Pulumi.yaml
+yq -i ".runtime.options.packagemanager |= `"yarn`"" Pulumi.yaml
 
 Get-ChildItem *.yaml -ErrorAction SilentlyContinue | ForEach-Object {
     $file = $_
