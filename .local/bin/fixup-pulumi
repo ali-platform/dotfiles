@@ -30,10 +30,10 @@ New-Item ".vscode" -ItemType Directory -Force | Out-Null
 $file = ".vscode/extensions.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
 if (Test-Path $file) {
-    $content = jq '.recommendations = ((.recommendations // []) + ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"] | unique | sort)' $file
+    $content = jq '.recommendations = ((.recommendations // []) + ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","GitHub.copilot","GitHub.copilot-chat","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"] | unique | sort)' $file
     $content | Set-Content $file
 } else {
-    jq -n '{"recommendations": ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"]}' > $file
+    jq -n '{"recommendations": ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","GitHub.copilot","GitHub.copilot-chat","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"]}' > $file
 }
 
 $file = ".vscode/settings.json"
