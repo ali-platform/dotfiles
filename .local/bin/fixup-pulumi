@@ -29,13 +29,12 @@ npx yarn-upgrade-all
 New-Item ".vscode" -ItemType Directory -Force | Out-Null
 $file = ".vscode/extensions.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
-$config = Get-Content $file -ErrorAction:SilentlyContinue | ConvertFrom-Json -AsHashTable
-if (-Not $config ) { $config = [ordered]@{} }
-if (-Not $config.recommendations) { $config.recommendations = @() }
-if ($config.recommendations -notcontains "dbaeumer.vscode-eslint") { $config.recommendations += "dbaeumer.vscode-eslint" }
-if ($config.recommendations -notcontains "rvest.vs-code-prettier-eslint") { $config.recommendations += "rvest.vs-code-prettier-eslint" }
-$config.recommendations = $config.recommendations | Sort-Object | Get-Unique
-$config | ConvertTo-Json -Depth 10 | Set-Content $file
+if (Test-Path $file) {
+    jq '.recommendations = ((.recommendations // []) + ["dbaeumer.vscode-eslint", "rvest.vs-code-prettier-eslint"] | unique | sort)' $file -o "$file.tmp"
+    Move-Item -Force "$file.tmp" $file
+} else {
+    jq -n '{"recommendations": ["dbaeumer.vscode-eslint", "rvest.vs-code-prettier-eslint"]}' > $file
+}
 
 $file = ".vscode/settings.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
