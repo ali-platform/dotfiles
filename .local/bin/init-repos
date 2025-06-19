@@ -67,6 +67,9 @@ function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
 
 function CloneOrgRepos([string]$org, [bool]$refresh) {
     $repos = gh repo list $org --no-archived --json "name,url" --limit 500 | ConvertFrom-Json | Sort-Object name
+    if( $org -eq "studysocial" ) {
+        $repos = $repos | Where-Object { $_.name -like "ss*" -or $_.name -like "platform*" -or $_.name -like "container*" -or $_.name -like "lambda*" }
+    }
     CloneRepos $org $repos $Refresh
 }
 
@@ -96,6 +99,7 @@ $project_items += CloneOrgRepos "ali-back-office" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-marketing" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
 $project_items += CloneOrgRepos "stemscopes-v3" $Refresh.IsPresent
+$project_items += CloneOrgRepos "studysocial" $Refresh.IsPresent
 
 
 # Create project manager file
