@@ -308,9 +308,11 @@ if (Test-Path .yarn/install-state.gz) {
 
 if (Test-Path .vscode/.copilot-instructions.md) {
     Write-Host -ForegroundColor Cyan "Moving .vscode/.copilot-instructions.md to .github/.copilot-instructions.md"
+    if (-Not (Test-Path .github)) {
+        New-Item -ItemType Directory -Path .github -Force | Out-Null
+    }
     Move-Item .vscode/.copilot-instructions.md .github/.copilot-instructions.md -Force
 }
-
 if (-Not (Test-Path .github/.copilot-instructions.md)) {
     Write-Host -ForegroundColor Cyan "Creating .github/.copilot-instructions.md"
 @'
