@@ -75,7 +75,7 @@ rm -f ~/.motd_shown
 # echo ''
 # echo -e "\e[1;36m------\e[0m"
 # echo -e "\e[1;36mAdding PPA for WSLU \e[0m"
-# sudo add-apt-repository -y ppa:wslutilities/wslu
+sudo add-apt-repository -y ppa:wslutilities/wslu
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
@@ -219,6 +219,15 @@ sudo snap install aws-cli --classic
 sudo snap install helm --classic
 sudo snap install kubectl --classic
 
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mSetup AWS CLI command completion\e[0m"
+# Create a symbolic link for aws_completer if it doesn't exist
+if ! [ -x "$(command -v aws_completer)" ]; then
+  echo 'Creating symbolic link for aws_completer...'
+  sudo ln -sf /snap/aws-cli/current/bin/aws_completer /usr/local/bin/aws_completer
+fi
+
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
@@ -243,6 +252,15 @@ rm -rf ~/.aws
 ln -sf "$USERPROFILE/.aws" "$HOME/.aws"
 rm -rf ~/.ssh
 ln -sf "$USERPROFILE/.ssh" "$HOME/.ssh"
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mFix WSL Interop\e[0m
+sudo sh -c 'echo :WSLInterop:M::MZ::/init:PF > /usr/lib/binfmt.d/WSLInterop.conf'
+sudo systemctl unmask systemd-binfmt.service
+sudo systemctl restart systemd-binfmt
+sudo systemctl mask systemd-binfmt.service
+
 
 
 # Initialize ssh-agent
@@ -276,6 +294,12 @@ ln -sf "$USERPROFILE/.ssh" "$HOME/.ssh"
 #   sudo chmod g+w /var/run/docker.sock
 # fi
 sudo curl -s https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh
+
+# Set up AWS CLI completion in bash_completion.d directory for all users
+if [ ! -f /etc/bash_completion.d/aws.sh ]; then
+  echo 'Installing AWS CLI completion for all users...'
+  echo 'complete -C /usr/local/bin/aws_completer aws' | sudo tee /etc/bash_completion.d/aws.sh > /dev/null
+fi
 
 echo ''
 echo -e "\e[1;32m------\e[0m"

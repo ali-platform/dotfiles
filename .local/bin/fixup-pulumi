@@ -1,5 +1,14 @@
 #!/usr/bin/env pwsh
 
+git pull
+
+if (-Not (Test-Path ./bootstrap.json)) {
+    Write-Host -ForegroundColor Red "This script must be run as part of a Plafrom projects with a valid bootstrap.json file."
+    exit 1
+}
+
+$bootstrapInfo = Get-Content bootstrap.json -ErrorAction SilentlyContinue | ConvertFrom-Json
+
 Write-Host -ForegroundColor Cyan "Updating yarn"
 @'
 node_modules
@@ -40,6 +49,7 @@ $file = ".vscode/settings.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
 $config = Get-Content $file -ErrorAction:SilentlyContinue | ConvertFrom-Json -AsHashTable
 if (-Not $config ) { $config = [ordered]@{} }
+$config["git.branchProtection"] = $bootstrapInfo.stacks.where{$_.workingStack -ne $true}.stackName
 $config["yaml.schemas"] = [ordered]@{
     "https://json.schemastore.org/github-workflow.json" = @("file:.github/workflows/*.yaml")
 }
@@ -271,15 +281,15 @@ Get-ChildItem .github/workflows -ErrorAction SilentlyContinue | ForEach-Object {
     $changes = $false
     $workflow = $workflow | ForEach-Object {
         if ($_ -match 'acceleratelearning/workflow-pull-request-checks/\.github/workflows/shared-workflow.yaml@v[1-2]') {
-            $_ -replace '@v[1-3]','@v3'
+            $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
         elseif ($_ -match 'acceleratelearning/workflow-pulumi-pull-request/.github/workflows/shared-workflow.yaml@v[1-3]') {
-            $_ -replace '@v[1-3]','@v4'
+            $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
         elseif ($_ -match 'acceleratelearning/workflow-pulumi-up/.github/workflows/shared-workflow.yaml@v[1-3]') {
-            $_ -replace '@v[1-3]','@v4'
+            $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
         elseif ($_ -match 'npm-auth-token') {
@@ -294,6 +304,11 @@ Get-ChildItem .github/workflows -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Host -ForegroundColor Yellow "Updating $($_.Name)"
         $workflow | Set-Content $_
     }
+}
+
+if (Test-Path bootstrap.sh) {
+    Write-Host -ForegroundColor Cyan "Removing bootstrap.sh"
+    Remove-Item bootstrap.sh
 }
 
 if (Test-Path login.sh) {
@@ -318,12 +333,22 @@ if (-Not (Test-Path .github/.copilot-instructions.md)) {
 @'
 # Copilot Instructions
 
-This project is a Pulumi project written in typescript that support the creation of infrastructure in AWS.
-There is also a directory, argocd, that has Kubernetes resources that are deployed via ArgoCD.  They are organization as a helm chart.
+## Project Overview
+
+This project is a Pulumi project written in TypeScript that support the creation of infrastructure in AWS and sometimes Azure and GCP.
+There project may also have one or more helm charts that are used by ArgoCD to deploy resources into a Kubernetes cluster. The are organized as directories under the ./argocd directory.
 
 ## Coding Standards
 
 - Use 2 spaces for indentation.
+- Use single quotes for strings.
+- Use `const` for variables that are not reassigned.
+- Use `let` for variables that are reassigned.
+- Use `import` statements for module imports.
+- Use `export` for functions and classes that should be accessible outside the module.
+
+## Interaction Guidelines
+
 - If I tell you that you are wrong, think about whether or not you think that's true and respond with facts.
 - Avoid apologizing or making conciliatory statements.
 - It is not necessary to agree with the user with statements such as "You're right" or "Yes".
@@ -331,7 +356,26 @@ There is also a directory, argocd, that has Kubernetes resources that are deploy
 '@ | Set-Content .github/.copilot-instructions.md
 }
 
+Write-Host -ForegroundColor Cyan "Updating Pulumi.yaml"
+# Test if .runtime if set to "nodejs"
+if ((yq -r ".runtime" Pulumi.yaml) -eq "nodejs") {
+    # Remove the existing runtime entry
+    yq -i 'del(.runtime)' Pulumi.yaml
+}
+yq -i ".runtime.name = `"nodejs`"" Pulumi.yaml
 yq -i ".runtime.options.packagemanager |= `"yarn`"" Pulumi.yaml
+yq -i ".config.`"pulumi:tags`".value.`"pulumi:template`" |= `"aws-typescript`"" Pulumi.yaml
+yq -i ".config.`"pulumi:tags`".value.repo |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" Pulumi.yaml
+if ((yq -r ".config.project.value.partOf" Pulumi.yaml) -eq "null") {
+    yq -i ".config.project.value.partOf = `"placeholder`"" Pulumi.yaml
+}
+
+Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
+    # Parse the stack name from the file name
+    $stackName = $_.Name -replace '^Pulumi\.(.*)\.yaml$', '$1'
+    Write-Host -ForegroundColor Cyan "Updating $stackName stack configuration"
+    yq -i ".config.`"pulumi:tags`".`"stack-name`" |= `"$stackName`"" $_
+}
 
 Get-ChildItem *.yaml -ErrorAction SilentlyContinue | ForEach-Object {
     $file = $_
