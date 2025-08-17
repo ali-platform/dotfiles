@@ -364,8 +364,7 @@ if ((yq -r ".runtime" Pulumi.yaml) -eq "nodejs") {
 }
 yq -i ".runtime.name = `"nodejs`"" Pulumi.yaml
 yq -i ".runtime.options.packagemanager |= `"yarn`"" Pulumi.yaml
-yq -i ".config.`"pulumi:tags`".value.`"pulumi:template`" |= `"aws-typescript`"" Pulumi.yaml
-yq -i ".config.`"pulumi:tags`".value.repo |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" Pulumi.yaml
+yq -i "del(.config.`"pulumi:tags`")" Pulumi.yaml
 if ((yq -r ".config.project.value.partOf" Pulumi.yaml) -eq "null") {
     yq -i ".config.project.value.partOf = `"placeholder`"" Pulumi.yaml
 }
@@ -373,8 +372,17 @@ if ((yq -r ".config.project.value.partOf" Pulumi.yaml) -eq "null") {
 Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
     # Parse the stack name from the file name
     $stackName = $_.Name -replace '^Pulumi\.(.*)\.yaml$', '$1'
+    $stackInfo = $bootstrapInfo.stacks | Where-Object { $_.stackName -eq $stackName }
     Write-Host -ForegroundColor Cyan "Updating $stackName stack configuration"
-    yq -i ".config.`"pulumi:tags`".`"stack-name`" |= `"$stackName`"" $_
+    yq -i ".config.`"aws:region`" |= `"us-east-2`"" $_
+    yq -i "del(.config.`"aws-native:region`")" $_
+    yq -i ".config.`"aws:allowedAccountIds`" |= [`"$($stackInfo.accountId)`"]" $_
+    yq -i "del(.config.`"pulumi:tags`")" $_
+    yq -i ".config.`"aws:defaultTags`".tags.`"pulumi-repo`" |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" $_
+    yq -i ".config.`"aws:defaultTags`".tags.`"stack-name`" |= `"$stackName`"" $_
+    yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
+    yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
+    yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterName)" $_
 }
 
 Get-ChildItem *.yaml -ErrorAction SilentlyContinue | ForEach-Object {
