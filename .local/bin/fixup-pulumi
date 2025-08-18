@@ -28,6 +28,8 @@ npmScopes:
 
 Remove-Item ./.npmrc -Force -ErrorAction SilentlyContinue
 
+# Fix issues with pulumi and latest google-protobuf version
+npm pkg set overrides.google-protobuf=3.21.4
 yarn set version stable
 yarn install
 
@@ -382,13 +384,19 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
     Write-Host -ForegroundColor Cyan "Updating $stackName stack configuration"
     yq -i ".config.`"aws:region`" |= `"us-east-2`"" $_
     yq -i "del(.config.`"aws-native:region`")" $_
-    yq -i ".config.`"aws:allowedAccountIds`" |= [`"$($stackInfo.accountId)`"]" $_
+    if ($stackInfo.accountId) {
+        yq -i ".config.`"aws:allowedAccountIds`" |= [`"$($stackInfo.accountId)`"]" $_
+    }
     yq -i "del(.config.`"pulumi:tags`")" $_
     yq -i ".config.`"aws:defaultTags`".tags.`"stack-name`" |= `"$stackName`"" $_
     if ($bootstrapInfo.gitHubRepositoryName) {
         yq -i ".config.`"aws:defaultTags`".tags.`"pulumi-repo`" |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" $_
-        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
-        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
+        if ($stackInfo.accountName) {
+            yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
+        }
+        if ($stackInfo.accountId) {
+            yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
+        }
         if ($stackInfo.k8sClusterAccountName) {
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId |= `"$($stackInfo.k8sClusterAccountId)`"" $_
