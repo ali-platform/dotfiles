@@ -388,7 +388,15 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
     if ($bootstrapInfo.gitHubRepositoryName) {
         yq -i ".config.`"aws:defaultTags`".tags.`"pulumi-repo`" |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" $_
         yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
-        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
+        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
+        if ($stackInfo.k8sClusterAccountName) {
+            yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
+            yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId |= `"$($stackInfo.k8sClusterAccountId)`"" $_
+        }
+        else {
+            yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName)" $_
+            yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId)" $_
+        }
         yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterName)" $_
     }
 }
