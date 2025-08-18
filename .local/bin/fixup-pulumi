@@ -49,7 +49,13 @@ $file = ".vscode/settings.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
 $config = Get-Content $file -ErrorAction:SilentlyContinue | ConvertFrom-Json -AsHashTable
 if (-Not $config ) { $config = [ordered]@{} }
-$config["git.branchProtection"] = $bootstrapInfo.stacks.where{$_.workingStack -ne $true}.stackName
+$protectedBranches = $bootstrapInfo.stacks.where{$_.workingStack -ne $true}.stackName
+if ($protectedBranches) {
+    $config["git.branchProtection"] = $bootstrapInfo.stacks.where{$_.workingStack -ne $true}.stackName
+}
+else {
+    $config.Remove("git.branchProtection")
+}
 $config["yaml.schemas"] = [ordered]@{
     "https://json.schemastore.org/github-workflow.json" = @("file:.github/workflows/*.yaml")
 }
@@ -378,11 +384,13 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
     yq -i "del(.config.`"aws-native:region`")" $_
     yq -i ".config.`"aws:allowedAccountIds`" |= [`"$($stackInfo.accountId)`"]" $_
     yq -i "del(.config.`"pulumi:tags`")" $_
-    yq -i ".config.`"aws:defaultTags`".tags.`"pulumi-repo`" |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" $_
     yq -i ".config.`"aws:defaultTags`".tags.`"stack-name`" |= `"$stackName`"" $_
-    yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
-    yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
-    yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterName)" $_
+    if ($bootstrapInfo.gitHubRepositoryName) {
+        yq -i ".config.`"aws:defaultTags`".tags.`"pulumi-repo`" |= `"$($bootstrapInfo.gitHubRepositoryName)/$($bootstrapInfo.owner)`"" $_
+        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
+        yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
+        yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterName)" $_
+    }
 }
 
 Get-ChildItem *.yaml -ErrorAction SilentlyContinue | ForEach-Object {
