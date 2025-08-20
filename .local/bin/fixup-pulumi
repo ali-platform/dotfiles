@@ -7,6 +7,8 @@ if (-Not (Test-Path ./bootstrap.json)) {
     exit 1
 }
 
+export REPO_DIR=$(git rev-parse --show-toplevel)
+
 $bootstrapInfo = Get-Content bootstrap.json -ErrorAction SilentlyContinue | ConvertFrom-Json
 
 Write-Host -ForegroundColor Cyan "Updating yarn"
@@ -37,8 +39,8 @@ Write-Host -ForegroundColor Cyan "Adding yarn packages"
 yarn add -D @tsconfig/recommended @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint eslint-config-prettier eslint-plugin-prettier prettier typescript
 npx yarn-upgrade-all
 
-New-Item ".vscode" -ItemType Directory -Force | Out-Null
-$file = ".vscode/extensions.json"
+New-Item "$REPO_DIR/.vscode" -ItemType Directory -Force | Out-Null
+$file = "$REPO_DIR/.vscode/extensions.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
 if (Test-Path $file) {
     $content = jq '.recommendations = ((.recommendations // []) + ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","GitHub.copilot","GitHub.copilot-chat","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"] | unique | sort)' $file
@@ -47,7 +49,7 @@ if (Test-Path $file) {
     jq -n '{"recommendations": ["alefragnani.project-manager","dbaeumer.vscode-eslint","esbenp.prettier-vscode","gitHub.vscode-pull-request-github","github.vscode-github-actions","GitHub.copilot","GitHub.copilot-chat","ms-kubernetes-tools.vscode-kubernetes-tools","ms-vscode-remote.remote-wsl","rvest.vs-code-prettier-eslint","yzhang.markdown-all-in-one"]}' > $file
 }
 
-$file = ".vscode/settings.json"
+$file = "$REPO_DIR/.vscode/settings.json"
 Write-Host -ForegroundColor Cyan "Updating $file"
 $config = Get-Content $file -ErrorAction:SilentlyContinue | ConvertFrom-Json -AsHashTable
 if (-Not $config ) { $config = [ordered]@{} }
@@ -284,7 +286,7 @@ if ($config.include -notcontains "*.ts") { $config.include += "*.ts" }
 $config | ConvertTo-Json -Depth 10 | Set-Content $file
 
 Write-Host -ForegroundColor Cyan "Checking for workflow changes"
-Get-ChildItem .github/workflows -ErrorAction SilentlyContinue | ForEach-Object {
+Get-ChildItem "$REPO_DIR/.github/workflows" -ErrorAction SilentlyContinue | ForEach-Object {
     $workflow = Get-Content $_
     $changes = $false
     $workflow = $workflow | ForEach-Object {
@@ -329,14 +331,14 @@ if (Test-Path .yarn/install-state.gz) {
     Remove-Item .yarn/install-state.gz
 }
 
-if (Test-Path .vscode/.copilot-instructions.md) {
+if (Test-Path "$REPO_DIR/.vscode/.copilot-instructions.md") {
     Write-Host -ForegroundColor Cyan "Moving .vscode/.copilot-instructions.md to .github/.copilot-instructions.md"
-    if (-Not (Test-Path .github)) {
-        New-Item -ItemType Directory -Path .github -Force | Out-Null
+    if (-Not (Test-Path "$REPO_DIR/.github")) {
+        New-Item -ItemType Directory -Path "$REPO_DIR/.github" -Force | Out-Null
     }
-    Move-Item .vscode/.copilot-instructions.md .github/.copilot-instructions.md -Force
+    Move-Item "$REPO_DIR/.vscode/.copilot-instructions.md" "$REPO_DIR/.github/.copilot-instructions.md" -Force
 }
-if (-Not (Test-Path .github/.copilot-instructions.md)) {
+if (-Not (Test-Path "$REPO_DIR/.github/.copilot-instructions.md")) {
     Write-Host -ForegroundColor Cyan "Creating .github/.copilot-instructions.md"
 @'
 # Copilot Instructions
@@ -361,7 +363,7 @@ There project may also have one or more helm charts that are used by ArgoCD to d
 - Avoid apologizing or making conciliatory statements.
 - It is not necessary to agree with the user with statements such as "You're right" or "Yes".
 - Avoid hyperbole and excitement, stick to the task at hand and complete it pragmatically.
-'@ | Set-Content .github/.copilot-instructions.md
+'@ | Set-Content "$REPO_DIR/.github/.copilot-instructions.md"
 }
 
 Write-Host -ForegroundColor Cyan "Updating Pulumi.yaml"

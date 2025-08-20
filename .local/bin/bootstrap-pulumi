@@ -15,6 +15,7 @@ aws sso login
 
 # Get the current folder name
 export REPO_NAME=${PWD##*/}
+export REPO_DIR=$(git rev-parse --show-toplevel)
 
 
 echo -e "\e[36m======= Getting latest from default branch\e[0m"
@@ -34,7 +35,7 @@ fi
 
 
 mkdir -p .vscode
-cat << EOF > ".vscode/settings.json"
+cat << EOF > "$REPO_DIR/.vscode/settings.json"
 {
   "git.branchProtection": [
     "main"
@@ -186,7 +187,7 @@ EOF
 
 echo -e "\e[36m======= Creating dependabot configuration\e[0m"
 mkdir -p .github
-cat << EOF > .github/dependabot.yml
+cat << EOF > "$REPO_DIR/.github/dependabot.yml"
 version: 2
 registries:
   npm-npmjs:
@@ -215,10 +216,10 @@ EOF
 
 
 echo -e "\e[36m======= Creating pull request workflow\e[0m"
-mkdir -p .github/workflows
-rm -f .github/workflows/pulumi-pull-request.yaml
-rm -f .github/workflows/platform-pull-request.yaml
-cat << EOF > .github/workflows/pull-request-checks.yaml
+mkdir -p "$REPO_DIR/.github/workflows"
+rm -f "$REPO_DIR/.github/workflows/pulumi-pull-request.yaml"
+rm -f "$REPO_DIR/.github/workflows/platform-pull-request.yaml"
+cat << EOF > "$REPO_DIR/.github/workflows/pull-request-checks.yaml"
 name: Pull Request Checks
 on:
   pull_request:
@@ -242,7 +243,7 @@ EOF
 # Configure Pull Request Checks workflow for Pulumi
 if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "false" ]]
 then
-  cat << EOF >> .github/workflows/pull-request-checks.yaml
+  cat << EOF >> "$REPO_DIR/.github/workflows/pull-request-checks.yaml"
       pulumi-check: false
 EOF
 fi
@@ -250,7 +251,7 @@ fi
 # Configure Pull Request Checks workflow for ArgoCD
 if [[ "$(jq -r '.useArgoCD' bootstrap.json)" == "false" ]]
 then
-  cat << EOF >> .github/workflows/pull-request-checks.yaml
+  cat << EOF >> "$REPO_DIR/.github/workflows/pull-request-checks.yaml"
       argocd-check: false
 EOF
 fi
@@ -263,11 +264,11 @@ then
   APP_NAME=${REPO_NAME#platform-}
 
   # Create ArgoCD configuration
-  mkdir -p argocd
-  mkdir -p "argocd/${APP_NAME}"
-  mkdir -p "argocd/${APP_NAME}/templates"
+  mkdir -p "./argocd"
+  mkdir -p "./argocd/${APP_NAME}"
+  mkdir -p "./argocd/${APP_NAME}/templates"
 
-  cat << EOF > "argocd/${APP_NAME}/Chart.yaml"
+  cat << EOF > "./argocd/${APP_NAME}/Chart.yaml"
 apiVersion: v2
 name: ${APP_NAME}
 description: A Helm chart for ${APP_NAME} to be used in ArgoCD
@@ -277,21 +278,21 @@ appVersion: 1.0.0
 EOF
 
 
-  if [ ! -f "argocd/${APP_NAME}/templates/deployment.yaml" ]; then
-    touch "argocd/${APP_NAME}/templates/deployment.yaml"
+  if [ ! -f "./argocd/${APP_NAME}/templates/deployment.yaml" ]; then
+    touch "./argocd/${APP_NAME}/templates/deployment.yaml"
   fi
 
   echo -e "\e[36m======= Creating default ArgoCD value files\e[0m"
-  if [ ! -f "argocd/${APP_NAME}/values.yaml" ]; then
-  cat << EOF > "argocd/${APP_NAME}/values.yaml"
+  if [ ! -f "./argocd/${APP_NAME}/values.yaml" ]; then
+  cat << EOF > "./argocd/${APP_NAME}/values.yaml"
 replicas: 2
 tag: 0.0.1
 EOF
   fi
 
   for stack in $STACK_NAMES; do
-    if [ ! -f "argocd/${APP_NAME}/values-${stack}.yaml" ]; then
-    cat << EOF > "argocd/${APP_NAME}/values-${stack}.yaml"
+    if [ ! -f "./argocd/${APP_NAME}/values-${stack}.yaml" ]; then
+    cat << EOF > "./argocd/${APP_NAME}/values-${stack}.yaml"
 EOF
     fi
   done
@@ -302,12 +303,12 @@ fi
 if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
 then
   echo -e "\e[36m======= Creating workflows for Pulumi\e[0m"
-  mkdir -p .github/workflows
+  mkdir -p "$REPO_DIR/.github/workflows"
   echo -e "\e[36m======= Create GitHub workflows for Pulumi\e[0m"
   for stack in $STACK_NAMES; do
     ACCOUNT_ID=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountId' bootstrap.json)
     ACCOUNT_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .accountName' bootstrap.json)
-    cat << EOF > .github/workflows/pulumi-up-${stack}.yaml
+    cat << EOF > "$REPO_DIR/.github/workflows/pulumi-up-${stack}.yaml"
 name: Pulumi Up ${stack}
 on:
   workflow_dispatch:
@@ -375,6 +376,7 @@ export interface Config extends ali.BaseConfig {
 }
 EOF
   fi
+  touch yarn.lock
 
   echo -e "\e[36m======= Make sure Typescript is configured correctly\e[0m"
   yq -i ".backend.url |= \"s3://ali-pulumi/${REPO_NAME}?region=us-east-2\"" Pulumi.yaml
