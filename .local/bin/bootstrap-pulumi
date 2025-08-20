@@ -16,22 +16,6 @@ aws sso login
 # Get the current folder name
 export REPO_NAME=${PWD##*/}
 
-if [[ "$(jq -r '.usePulumi' bootstrap.json)" == "true" ]]
-then
-  if [[ "$REPO_NAME" == aws-account* ]]; then
-    echo -e "\e[33mSkipping IAM role verification for GitHub actions - REPO_NAME starts with 'aws-account'\e[0m"
-  else
-    echo -e "\e[36m======= Verifying IAM role for GitHub actions has been created\e[0m"
-    ROLE=$(aws iam list-roles --query 'Roles[?RoleName==`ghr-'${REPO_NAME}'`].RoleName' --output text)
-    if [[ -z "$ROLE" ]]
-    then
-      echo -e "\e[31mRole ghr-${REPO_NAME} not found in profile $PROFILE\e[0m"
-      echo "Make sure the PulumiGitHubActionRole for $REPO_NAME has been created in the aws-account-* repos"
-      exit 1
-    fi
-  fi
-fi
-
 
 echo -e "\e[36m======= Getting latest from default branch\e[0m"
 DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5)
@@ -198,11 +182,6 @@ cat << EOF > ".vscode/settings.json"
   ]
 }
 EOF
-
-
-echo -e "\e[36m======= Updating VS Code settings file with protected branches\e[0m"
-JSON_NAMES=$(jq -c '[.stacks[] | select(.workingStack != true) | .stackName]' bootstrap.json)
-jq --argjson json_names "$JSON_NAMES" '."git.branchProtection" |= $json_names' .vscode/settings.json > tmp.json && cp tmp.json .vscode/settings.json && rm tmp.json
 
 
 echo -e "\e[36m======= Creating dependabot configuration\e[0m"
@@ -392,7 +371,6 @@ EOF
 import * as ali from '@acceleratelearning/ali-pulumi';
 
 export interface Config extends ali.BaseConfig {
-  k8sClusterName: string;
   partOf: string;
 }
 EOF
@@ -404,7 +382,7 @@ EOF
   yq -i ".config.project.value.partOf |= \"placeholder\"" Pulumi.yaml
 
   # Make sure project requires a current version of node
-  echo "`jq '.engines.node=">=20.0.0"' package.json`" > package.json
+  echo "`jq '.engines.node=">=24.0.0"' package.json`" > package.json
   echo "`jq '.engines.npm=">=9.0.0"' package.json`" > package.json
   echo "`jq '.license="UNLICENSED"' package.json`" > package.json
   echo "`jq '.packageManager="yarn@4.9.1"' package.json`" > package.json
@@ -438,7 +416,6 @@ EOF
     K8S_CLUSTER_NAME=$(jq -r '.stacks[] | select(.stackName == "'${stack}'") | .argoCdAccountName' bootstrap.json)
     pulumi config set aws:region "${AWS_REGION}" --stack $stack
     pulumi config set --path aws:allowedAccountIds[0] "${ACCOUNT_ID}" --stack $stack
-    pulumi config set aws-native:region "${AWS_REGION}" --stack $stack
     pulumi config set --path stack.accountName "${ACCOUNT_NAME}" --stack $stack
     pulumi config set --path stack.k8sClusterName "${K8S_CLUSTER_NAME}" --stack $stack
   done
