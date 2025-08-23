@@ -290,15 +290,15 @@ Get-ChildItem "$REPO_DIR/.github/workflows" -ErrorAction SilentlyContinue | ForE
     $workflow = Get-Content $_
     $changes = $false
     $workflow = $workflow | ForEach-Object {
-        if ($_ -match 'acceleratelearning/workflow-pull-request-checks/\.github/workflows/shared-workflow.yaml@v[1-2]') {
+        if ($_ -match 'acceleratelearning/workflow-pull-request-checks/\.github/workflows/shared-workflow.yaml@v[1-4]') {
             $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
-        elseif ($_ -match 'acceleratelearning/workflow-pulumi-pull-request/.github/workflows/shared-workflow.yaml@v[1-3]') {
+        elseif ($_ -match 'acceleratelearning/workflow-pulumi-pull-request/.github/workflows/shared-workflow.yaml@v[1-4]') {
             $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
-        elseif ($_ -match 'acceleratelearning/workflow-pulumi-up/.github/workflows/shared-workflow.yaml@v[1-3]') {
+        elseif ($_ -match 'acceleratelearning/workflow-pulumi-up/.github/workflows/shared-workflow.yaml@v[1-4]') {
             $_ -replace '@v[1-4]','@v5'
             $changes = $true
         }
