@@ -7,7 +7,7 @@ if (-Not (Test-Path ./bootstrap.json)) {
     exit 1
 }
 
-export REPO_DIR=$(git rev-parse --show-toplevel)
+$REPO_DIR=$(git rev-parse --show-toplevel)
 
 $bootstrapInfo = Get-Content bootstrap.json -ErrorAction SilentlyContinue | ConvertFrom-Json
 
