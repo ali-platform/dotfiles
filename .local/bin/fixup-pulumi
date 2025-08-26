@@ -32,6 +32,7 @@ Remove-Item ./.npmrc -Force -ErrorAction SilentlyContinue
 
 # Fix issues with pulumi and latest google-protobuf version
 npm pkg set overrides.google-protobuf=3.21.4
+Remove-Item ./.yarnrc -Force -ErrorAction SilentlyContinue
 yarn set version stable
 yarn install
 
