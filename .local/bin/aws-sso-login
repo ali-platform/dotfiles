@@ -1,40 +1,65 @@
 #!/bin/env bash
 # This script is designed to sourced from your shell to set the AWS_PROFILE variable
+set -e
 
 if [ $# -eq 0 ]
 then
-    if [ -f bootstrap.json ]; then
-        export AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < bootstrap.json)
-    else
-        export AWS_PROFILE=cloud-sandbox
-    fi
+  if [ -f bootstrap.json ]; then
+    export AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < bootstrap.json)
+  else
+    export AWS_PROFILE=cloud-sandbox
+  fi
 else
-    export AWS_PROFILE=$1
+  export AWS_PROFILE=$1
 fi
 
 # Verify that AWS_PROFILE exists in ~/.aws/config
 if ! grep -q "\[profile $AWS_PROFILE\]" ~/.aws/config; then
-    echo -e "\033[0;31mAWS_PROFILE $AWS_PROFILE not found in ~/.aws/config\033[0m"
+  echo -e "\033[0;31mAWS_PROFILE $AWS_PROFILE not found in ~/.aws/config\033[0m"
 else
-    echo -e "\033[0;36mAuthenticating to the AWS account $AWS_PROFILE\033[0m"
+  echo -e "\033[0;36mUsing AWS account $AWS_PROFILE\033[0m"
+  MIN_LEFT=30
+
+  # Pick date command (gdate on macOS with coreutils)
+  DATEBIN="date"
+  if command -v gdate >/dev/null 2>&1; then DATEBIN="gdate"; fi
+
+  EXP_ISO="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null | jq -r '.Expiration')"
+  EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null || return 1)"
+
+  NOW_EPOCH="$("$DATEBIN" -u +%s)"
+  REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
+  REQUIRED_SECS=$(( MIN_LEFT * 60 ))
+
+  if (( REMAIN_SECS >= REQUIRED_SECS )); then
+    # Success
+    REMAIN_MIN=$(( REMAIN_SECS / 60 ))
+    echo "OK: ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})."
+  else
+    # Not enough time left
+    if (( REMAIN_SECS > 0 )); then
+      REMAIN_MIN=$(( REMAIN_SECS / 60 ))
+      echo "NOT OK: only ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})." >&2
+    else
+      echo "NOT OK: credentials already expired (expired at ${EXP_ISO})." >&2
+    fi
+    echo -e "\033[0;36mAuthenticating with SSO\033[0m"
     aws sso login
+  fi
 
-    CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
-    if [[ "$CLUSTER" != "None" ]]
-    then
-        echo -e "\033[0;36mAuthenticating to the $CLUSTER kubernetes cluster\033[0m"
-        aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
-    fi
+  CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
+  if [[ "$CLUSTER" != "None" ]]
+  then
+      echo -e "\033[0;36mAuthenticating to the $CLUSTER kubernetes cluster\033[0m"
+      aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
+  fi
 
-    if [ -f bootstrap.json ]; then
-        STACK=$(jq -r '.stacks[] | select(.accountName == "'$AWS_PROFILE'") | .stackName' < bootstrap.json | head -n 1)
-        if [[ "$STACK" != "" ]]
-        then
-            echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
-            pulumi stack select $STACK
-        fi
-    fi
+  if [ -f bootstrap.json ]; then
+      STACK=$(jq -r '.stacks[] | select(.accountName == "'$AWS_PROFILE'") | .stackName' < bootstrap.json | head -n 1)
+      if [[ "$STACK" != "" ]]
+      then
+          echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
+          pulumi stack select $STACK
+      fi
+  fi
 fi
-
-
-
