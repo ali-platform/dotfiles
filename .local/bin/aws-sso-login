@@ -1,7 +1,5 @@
 #!/bin/env bash
 # This script is designed to sourced from your shell to set the AWS_PROFILE variable
-set -e
-
 if [ $# -eq 0 ]
 then
   if [ -f bootstrap.json ]; then
