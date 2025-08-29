@@ -386,7 +386,7 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
     $stackInfo = $bootstrapInfo.stacks | Where-Object { $_.stackName -eq $stackName }
     Write-Host -ForegroundColor Cyan "Updating $stackName stack configuration"
     yq -i ".config.`"aws:region`" |= `"us-east-2`"" $_
-    yq -i "del(.config.`"aws-native:region`")" $_
+    # yq -i "del(.config.`"aws-native:region`")" $_
     if ($stackInfo.accountId) {
         yq -i ".config.`"aws:allowedAccountIds`" |= [`"$($stackInfo.accountId)`"]" $_
     }
@@ -397,9 +397,9 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
         if ($stackInfo.accountName) {
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
         }
-        if ($stackInfo.accountId) {
-            yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
-        }
+        # if ($stackInfo.accountId) {
+        #     yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
+        # }
         if ($stackInfo.k8sClusterAccountName) {
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId |= `"$($stackInfo.k8sClusterAccountId)`"" $_
