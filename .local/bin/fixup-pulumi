@@ -397,9 +397,6 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
         if ($stackInfo.accountName) {
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountName |= `"$($stackInfo.accountName)`"" $_
         }
-        # if ($stackInfo.accountId) {
-        #     yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".accountId |= `"$($stackInfo.accountId)`"" $_
-        # }
         if ($stackInfo.k8sClusterAccountName) {
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountName |= `"$($stackInfo.k8sClusterAccountName)`"" $_
             yq -i ".config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId |= `"$($stackInfo.k8sClusterAccountId)`"" $_
@@ -409,6 +406,7 @@ Get-ChildItem 'Pulumi.*.yaml' | ForEach-Object{
             yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterAccountId)" $_
         }
         yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".k8sClusterName)" $_
+        yq -i "del(.config.`"$($bootstrapInfo.gitHubRepositoryName):stack`".AccountId)" $_
     }
 }
 
