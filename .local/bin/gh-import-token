@@ -1,0 +1,4 @@
+#!/bin/env sh
+WIN_GH_TOKEN="$(powershell.exe -NoProfile -Command 'gh auth token' | tr -d "\r")"
+printf "%s\n" "$WIN_GH_TOKEN" | gh auth login --hostname github.com --with-token
+gh auth status -h github.com -t
