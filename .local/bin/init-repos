@@ -99,9 +99,11 @@ $project_items += CloneOrgRepos "ali-back-office" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-marketing" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
 $project_items += CloneOrgRepos "stemscopes-v3" $Refresh.IsPresent
+$project_items += CloneOrgRepos "stemscopes-v4" $Refresh.IsPresent
 $project_items += CloneOrgRepos "studysocial" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-one-platform" $Refresh.IsPresent
 $project_items += CloneOrgRepos "ali-onramp" $Refresh.IsPresent
+$project_items += CloneOrgRepos "ali-open" $Refresh.IsPresent
 
 
 # Create project manager file
