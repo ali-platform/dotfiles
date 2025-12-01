@@ -1,12 +1,22 @@
 #!/bin/env bash
 # This script is designed to sourced from your shell to set the AWS_PROFILE variable
+
+# Determine which config file to use
+if [ -f .ali/projectInfo.json ]; then
+    CONFIG_FILE=.ali/projectInfo.json
+elif [ -f bootstrap.json ]; then
+    CONFIG_FILE=bootstrap.json
+else
+    CONFIG_FILE=""
+fi
+
 if [ $# -eq 0 ]
 then
-  if [ -f bootstrap.json ]; then
-    export AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < bootstrap.json)
-  else
-    export AWS_PROFILE=cloud-sandbox
-  fi
+    if [ -n "$CONFIG_FILE" ]; then
+        export AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < "$CONFIG_FILE")
+    else
+        export AWS_PROFILE=cloud-sandbox
+    fi
 else
   export AWS_PROFILE=$1
 fi
@@ -52,12 +62,16 @@ else
       aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
   fi
 
-  if [ -f bootstrap.json ]; then
-      STACK=$(jq -r '.stacks[] | select(.accountName == "'$AWS_PROFILE'") | .stackName' < bootstrap.json | head -n 1)
-      if [[ "$STACK" != "" ]]
-      then
-          echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
-          pulumi stack select $STACK
-      fi
-  fi
+    if [ -n "$CONFIG_FILE" ]; then
+        # Check if Pulumi is enabled
+        PULUMI_ENABLED=$(jq -r '.features.pulumi.enabled // .usePulumi // false' < "$CONFIG_FILE")
+        if [[ "$PULUMI_ENABLED" == "true" ]]; then
+            STACK=$(jq -r '.stacks[] | select(.accountName == "'$AWS_PROFILE'") | .stackName' < "$CONFIG_FILE" | head -n 1)
+            if [[ "$STACK" != "" ]]
+            then
+                echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
+                pulumi stack select $STACK
+            fi
+        fi
+    fi
 fi
