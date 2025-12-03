@@ -96,3 +96,7 @@ alias yup='yarn set version stable && npx yarn-upgrade-all'
 alias sbp='source ~/.bash_profile'
 alias slo='source ~/.local/bin/aws-sso-login'
 alias pss='source ~/.local/bin/pulumi-stack-select'
+
+# Use Windows gh CLI directly instead of symlinking config
+# This works because the windows gh cli is already in the WSL path by design. Verify with command -v gh.exe
+alias gh="gh.exe"

@@ -192,7 +192,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install \
   python3-crcmod \
   virtualenv \
   wslu \
-  gh \
   packer \
   nodejs \
   azure-cli \
