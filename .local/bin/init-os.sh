@@ -252,6 +252,8 @@ rm -rf ~/.aws
 ln -sf "$USERPROFILE/.aws" "$HOME/.aws"
 rm -rf ~/.ssh
 ln -sf "$USERPROFILE/.ssh" "$HOME/.ssh"
+rm -rf ~/.gitconfig
+ln -sf "$USERPROFILE/.gitconfig" "$HOME/.gitconfig"
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
