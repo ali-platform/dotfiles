@@ -14,6 +14,7 @@ export KUBERNETES_EXEC_INFO='{"apiVersion": "client.authentication.k8s.io/v1beta
 export NODE_OPTIONS="--max-old-space-size=8192"
 export ALI_GITHUB_PACKAGE_READER_TOKEN=$(echo "Z2hwXzNNVGxYc01WY0dvOTJaTGp0YzNJdzhtdDNUSUZuODRRcW5FVwo=" | base64 -d)
 export NPM_AUTH_TOKEN=$(github-token)
+export NX_TUI=false
 
 if [[ -n $PS1 ]]; then
   # This should only run for interactive shells
