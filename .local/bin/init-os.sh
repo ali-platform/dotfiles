@@ -178,6 +178,13 @@ sudo DEBIAN_FRONTEND=noninteractive apt-add-repository -y "deb [arch=amd64] http
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstall PostgreSQL GPG keys\e[0m"
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mUpdate apt based on new repos\e[0m"
 sudo DEBIAN_FRONTEND=noninteractive apt-get -yq update
 
@@ -196,7 +203,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install \
   packer \
   nodejs \
   azure-cli \
-  postgresql-client \
+  postgresql-client-17 \
   mysql-client
 
 echo ''
