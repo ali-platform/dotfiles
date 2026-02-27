@@ -1,0 +1,39 @@
+#!/bin/env bash
+# This script will generate the AWS config file with the correct profile and region based on project in our organziation
+
+# Initilize the config file
+mkdir -p ~/.aws
+CONFIG_FILE=~/.aws/config
+
+cat <<EOL > $CONFIG_FILE
+[default]
+region = us-east-2
+output = json
+[profile ali-management]
+sso_start_url = https://acceleratelearning.awsapps.com/start
+sso_region = us-east-2
+sso_account_id = 308585226687
+sso_role_name = Administrator
+region = us-east-2
+output = json
+EOL
+
+# Get a list of all accounts in the organization
+aws organizations list-accounts --output json --profile ali-management \
+  | jq -r '.Accounts[] | select(.Status == "ACTIVE" and .Name != "ali-management") | [.Name, .Id] | @tsv' \
+  | sort | while read -r name id; do
+  # Add a profile for each account
+  cat <<EOL >> $CONFIG_FILE
+[profile $name]
+sso_start_url = https://acceleratelearning.awsapps.com/start
+sso_region = us-east-2
+sso_account_id = $id
+sso_role_name = Administrator
+region = us-east-2
+output = json
+EOL
+done
+
+
+
+
