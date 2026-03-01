@@ -10,15 +10,71 @@ else
     CONFIG_FILE=""
 fi
 
-if [ $# -eq 0 ]
-then
-    if [ -n "$CONFIG_FILE" ]; then
-        export AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < "$CONFIG_FILE")
-    else
-        export AWS_PROFILE=cloud-sandbox
+# Get current git branch
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Initialize variables
+STACK=""
+export AWS_PROFILE=""
+
+# Handle argument vs branch-based lookup
+if [ $# -gt 0 ]; then
+    # Argument provided - use it as AWS_PROFILE, but try to find STACK from config
+    LOOKUP_KEY="$1"
+
+    if [ "$CONFIG_FILE" = ".ali/projectInfo.json" ] && [ -n "$LOOKUP_KEY" ]; then
+        # Try to match by stackName first, get the values directly
+        STACK=$(jq -r '.stacks[] | select(.stackName == "'"$LOOKUP_KEY"'") | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        AWS_PROFILE=$(jq -r '.stacks[] | select(.stackName == "'"$LOOKUP_KEY"'") | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+
+        # If no match, try to match by accountName
+        if [ -z "$AWS_PROFILE" ]; then
+            STACK=$(jq -r '.stacks[] | select(.accountName == "'"$LOOKUP_KEY"'") | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+            AWS_PROFILE=$(jq -r '.stacks[] | select(.accountName == "'"$LOOKUP_KEY"'") | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        fi
+    fi
+
+    # If no match found in config, use the argument as AWS_PROFILE
+    if [ -z "$AWS_PROFILE" ]; then
+        AWS_PROFILE="$1"
     fi
 else
-  export AWS_PROFILE=$1
+    # No argument - use branch name for smart lookup
+    LOOKUP_KEY="$BRANCH_NAME"
+
+    if [ "$CONFIG_FILE" = ".ali/projectInfo.json" ] && [ -n "$LOOKUP_KEY" ]; then
+        # Try to match by stackName first, get the values directly
+        STACK=$(jq -r '.stacks[] | select(.stackName == "'"$LOOKUP_KEY"'") | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        AWS_PROFILE=$(jq -r '.stacks[] | select(.stackName == "'"$LOOKUP_KEY"'") | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+
+        # If no match, try to match by accountName
+        if [ -z "$AWS_PROFILE" ]; then
+            STACK=$(jq -r '.stacks[] | select(.accountName == "'"$LOOKUP_KEY"'") | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+            AWS_PROFILE=$(jq -r '.stacks[] | select(.accountName == "'"$LOOKUP_KEY"'") | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        fi
+
+        # If no match, try to match by branchName
+        if [ -z "$AWS_PROFILE" ]; then
+            STACK=$(jq -r '.stacks[] | select(.branchName == "'"$LOOKUP_KEY"'") | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+            AWS_PROFILE=$(jq -r '.stacks[] | select(.branchName == "'"$LOOKUP_KEY"'") | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        fi
+    fi
+
+    # If still no match, fall back to workingStack or other defaults
+    if [ -z "$AWS_PROFILE" ]; then
+        if [ "$CONFIG_FILE" = ".ali/projectInfo.json" ]; then
+            # Use workingStack from projectInfo.json
+            STACK=$(jq -r '.stacks[] | select(.workingStack == true) | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+            AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        elif [ "$CONFIG_FILE" = "bootstrap.json" ]; then
+            # Use workingStack from bootstrap.json (legacy support)
+            STACK=$(jq -r '.stacks[] | select(.workingStack == true) | .stackName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+            AWS_PROFILE=$(jq -r '.stacks[] | select(.workingStack == true) | .accountName' < "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        else
+            # No config file found, use default
+            AWS_PROFILE="ali-shared"
+        fi
+    fi
 fi
 
 # Verify that AWS_PROFILE exists in ~/.aws/config
@@ -33,10 +89,22 @@ else
   if command -v gdate >/dev/null 2>&1; then DATEBIN="gdate"; fi
 
   EXP_ISO="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null | jq -r '.Expiration')"
-  EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null || return 1)"
 
-  NOW_EPOCH="$("$DATEBIN" -u +%s)"
-  REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
+  # Check if credentials are valid before parsing expiration
+  if [ -z "$EXP_ISO" ] || [ "$EXP_ISO" = "null" ]; then
+    # Credentials don't exist or are invalid, force SSO login
+    REMAIN_SECS=-1
+  else
+    EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null)"
+    if [ -z "$EXP_EPOCH" ]; then
+      # Failed to parse expiration date, force SSO login
+      REMAIN_SECS=-1
+    else
+      NOW_EPOCH="$("$DATEBIN" -u +%s)"
+      REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
+    fi
+  fi
+
   REQUIRED_SECS=$(( MIN_LEFT * 60 ))
 
   if (( REMAIN_SECS >= REQUIRED_SECS )); then
@@ -62,16 +130,9 @@ else
       aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
   fi
 
-    if [ -n "$CONFIG_FILE" ]; then
-        # Check if Pulumi is enabled
-        PULUMI_ENABLED=$(jq -r '.features.pulumi.enabled // .usePulumi // false' < "$CONFIG_FILE")
-        if [[ "$PULUMI_ENABLED" == "true" ]]; then
-            STACK=$(jq -r '.stacks[] | select(.accountName == "'$AWS_PROFILE'") | .stackName' < "$CONFIG_FILE" | head -n 1)
-            if [[ "$STACK" != "" ]]
-            then
-                echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
-                pulumi stack select $STACK
-            fi
-        fi
-    fi
+  # Select Pulumi stack if a stack-specific config file exists
+  if [ -n "$STACK" ] && [ -f "Pulumi.$STACK.yaml" ]; then
+      echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
+      pulumi stack select $STACK
+  fi
 fi
