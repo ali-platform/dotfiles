@@ -1,2 +1,24 @@
 #!/usr/bin/env bash
-wslview $(git remote get-url origin)
+
+# Get the remote URL
+url=$(git remote get-url origin)
+
+# Convert SSH URL to HTTPS if needed
+if [[ "$url" =~ ^git@([^:]+):(.+)$ ]]; then
+    # Format: git@github.com:user/repo.git
+    host="${BASH_REMATCH[1]}"
+    path="${BASH_REMATCH[2]}"
+    # Remove .git suffix if present
+    path="${path%.git}"
+    url="https://${host}/${path}"
+elif [[ "$url" =~ ^ssh://git@([^/]+)/(.+)$ ]]; then
+    # Format: ssh://git@github.com/user/repo.git
+    host="${BASH_REMATCH[1]}"
+    path="${BASH_REMATCH[2]}"
+    # Remove .git suffix if present
+    path="${path%.git}"
+    url="https://${host}/${path}"
+fi
+
+# Open the URL in browser
+wslview "$url"
