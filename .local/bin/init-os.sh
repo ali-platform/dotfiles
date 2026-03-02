@@ -50,6 +50,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install \
   inetutils-traceroute \
   bind9-dnsutils \
   tcpdump \
+  socat \
   openssh-client \
   xdg-utils
 
