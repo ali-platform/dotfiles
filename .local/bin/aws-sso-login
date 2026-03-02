@@ -75,6 +75,11 @@ else
             AWS_PROFILE="ali-shared"
         fi
     fi
+
+    # Final fallback to ali-shared if no stack entry was found
+    if [ -z "$AWS_PROFILE" ]; then
+        AWS_PROFILE="ali-shared"
+    fi
 fi
 
 # Verify that AWS_PROFILE exists in ~/.aws/config
