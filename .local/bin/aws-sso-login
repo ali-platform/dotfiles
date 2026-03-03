@@ -85,59 +85,64 @@ fi
 # Verify that AWS_PROFILE exists in ~/.aws/config
 if ! grep -q "\[profile $AWS_PROFILE\]" ~/.aws/config; then
   echo -e "\033[0;31mAWS_PROFILE $AWS_PROFILE not found in ~/.aws/config\033[0m"
+  exit 1
+fi
+
+echo -e "\033[0;36mUsing AWS account $AWS_PROFILE\033[0m"
+MIN_LEFT=30
+
+# Pick date command (gdate on macOS with coreutils)
+DATEBIN="date"
+if command -v gdate >/dev/null 2>&1; then DATEBIN="gdate"; fi
+
+EXP_ISO="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null | jq -r '.Expiration')"
+
+# Check if credentials are valid before parsing expiration
+if [ -z "$EXP_ISO" ] || [ "$EXP_ISO" = "null" ]; then
+# Credentials don't exist or are invalid, force SSO login
+REMAIN_SECS=-1
 else
-  echo -e "\033[0;36mUsing AWS account $AWS_PROFILE\033[0m"
-  MIN_LEFT=30
-
-  # Pick date command (gdate on macOS with coreutils)
-  DATEBIN="date"
-  if command -v gdate >/dev/null 2>&1; then DATEBIN="gdate"; fi
-
-  EXP_ISO="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null | jq -r '.Expiration')"
-
-  # Check if credentials are valid before parsing expiration
-  if [ -z "$EXP_ISO" ] || [ "$EXP_ISO" = "null" ]; then
-    # Credentials don't exist or are invalid, force SSO login
+EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null)"
+if [ -z "$EXP_EPOCH" ]; then
+    # Failed to parse expiration date, force SSO login
     REMAIN_SECS=-1
-  else
-    EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null)"
-    if [ -z "$EXP_EPOCH" ]; then
-      # Failed to parse expiration date, force SSO login
-      REMAIN_SECS=-1
-    else
-      NOW_EPOCH="$("$DATEBIN" -u +%s)"
-      REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
-    fi
-  fi
+else
+    NOW_EPOCH="$("$DATEBIN" -u +%s)"
+    REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
+fi
+fi
 
-  REQUIRED_SECS=$(( MIN_LEFT * 60 ))
+REQUIRED_SECS=$(( MIN_LEFT * 60 ))
 
-  if (( REMAIN_SECS >= REQUIRED_SECS )); then
-    # Success
+if (( REMAIN_SECS >= REQUIRED_SECS )); then
+# Success
+REMAIN_MIN=$(( REMAIN_SECS / 60 ))
+echo "OK: ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})."
+else
+# Not enough time left
+if (( REMAIN_SECS > 0 )); then
     REMAIN_MIN=$(( REMAIN_SECS / 60 ))
-    echo "OK: ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})."
-  else
-    # Not enough time left
-    if (( REMAIN_SECS > 0 )); then
-      REMAIN_MIN=$(( REMAIN_SECS / 60 ))
-      echo "NOT OK: only ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})." >&2
-    else
-      echo "NOT OK: credentials already expired (expired at ${EXP_ISO})." >&2
-    fi
-    echo -e "\033[0;36mAuthenticating with SSO\033[0m"
-    aws sso login
-  fi
+    echo "NOT OK: only ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})." >&2
+else
+    echo "NOT OK: credentials already expired (expired at ${EXP_ISO})." >&2
+fi
+echo -e "\033[0;36mAuthenticating with SSO\033[0m"
+aws sso login
+fi
 
-  CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
-  if [[ "$CLUSTER" != "None" ]]
-  then
-      echo -e "\033[0;36mAuthenticating to the $CLUSTER kubernetes cluster\033[0m"
-      aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
-  fi
+CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
+if [[ "$CLUSTER" != "None" ]]
+then
+    echo -e "\033[0;36mAuthenticating to the $CLUSTER kubernetes cluster\033[0m"
+    aws eks update-kubeconfig --region us-east-2 --name $CLUSTER --alias $CLUSTER
+fi
 
-  # Select Pulumi stack if a stack-specific config file exists
-  if [ -n "$STACK" ] && [ -f "Pulumi.$STACK.yaml" ]; then
-      echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
-      pulumi stack select $STACK
-  fi
+# Select Pulumi stack if a stack-specific config file exists
+if [ -z "$STACK" ]; then
+    STACK=$AWS_PROFILE
+fi
+
+if [ -f "Pulumi.$STACK.yaml" ]; then
+    echo -e "\033[0;36mSelecting the $STACK pulumi stack\033[0m"
+    pulumi stack select $STACK
 fi

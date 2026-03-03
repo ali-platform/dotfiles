@@ -33,9 +33,8 @@ function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
             }
             $path = Join-Path $path $repo_name
             if (-Not (Test-Path $path)) {
-                $git_url = "$($_.url).git"
-                Write-Host -ForegroundColor Cyan "Cloning $git_url"
-                git clone $git_url $path
+                Write-Host -ForegroundColor Cyan "Cloning $($_.sshUrl)"
+                git clone $_.sshUrl $path
             }
             else {
                 if ($refresh) {
@@ -67,7 +66,7 @@ function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
 
 function CloneOrgRepos([string]$org, [bool]$refresh) {
     Write-Host -ForegroundColor Green "Processing organization: $org"
-    $repos = gh repo list $org --no-archived --json "name,url" --limit 500 | ConvertFrom-Json | Sort-Object name
+    $repos = gh repo list $org --no-archived --json "name,sshUrl" --limit 500 | ConvertFrom-Json | Sort-Object name
     if( $org -eq "studysocial" ) {
         $repos = $repos | Where-Object { $_.name -like "ss*" -or $_.name -like "platform*" -or $_.name -like "container*" -or $_.name -like "*lambda*" -or $_.name -like "github*" }
     }
