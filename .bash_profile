@@ -69,15 +69,3 @@ complete -C aws_completer aws
 #         sudo hwclock -s
 #         sudo ntpdate time.windows.com
 # }
-
-# Integrate with Windows SSH agent using npiperelay
-# export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
-
-# if ! ss -a | grep -q "$SSH_AUTH_SOCK"; then
-#     rm -f "$SSH_AUTH_SOCK"
-#     (setsid socat UNIX-LISTEN:"$SSH_AUTH_SOCK",fork \
-#         EXEC:"$USERPROFILE/AppData/Local/Microsoft/WinGet/Links/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork &)
-# fi
-
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
