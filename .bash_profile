@@ -18,10 +18,10 @@ export NX_TUI=false
 
 if [[ -n $PS1 ]]; then
   # This should only run for interactive shells
-  if [ -f "$USERPROFILE/scoop/apps/ssh-agent-wsl/2.5/ssh-agent-wsl" ]
-  then
-    eval $($USERPROFILE/scoop/apps/ssh-agent-wsl/2.5/ssh-agent-wsl -r)
-  fi
+  # if [ -f "$USERPROFILE/scoop/apps/ssh-agent-wsl/2.5/ssh-agent-wsl" ]
+  # then
+  #   eval $($USERPROFILE/scoop/apps/ssh-agent-wsl/2.5/ssh-agent-wsl -r)
+  # fi
 
   # Configure for oh-my-posh
   # This causes an issue when oh-my-posh is installed with brew since the installation location changes
@@ -78,3 +78,6 @@ complete -C aws_completer aws
 #     (setsid socat UNIX-LISTEN:"$SSH_AUTH_SOCK",fork \
 #         EXEC:"$USERPROFILE/AppData/Local/Microsoft/WinGet/Links/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork &)
 # fi
+
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
