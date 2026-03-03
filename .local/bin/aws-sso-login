@@ -146,19 +146,6 @@ else
     fi
     echo -e "\033[0;36mAuthenticating with SSO\033[0m"
     aws sso login --profile "$AWS_PROFILE"
-
-    # Re-validate after login
-    if ! aws sts get-caller-identity --profile "$AWS_PROFILE" --output json >/dev/null 2>&1; then
-        echo -e "\033[0;31mSSO login succeeded but credentials are still unusable for profile $AWS_PROFILE\033[0m" >&2
-        exit 1
-    fi
-
-    if (( IS_SSO_PROFILE == 1 )); then
-        if ! aws sso list-accounts --profile "$AWS_PROFILE" --max-results 1 --output json >/dev/null 2>&1; then
-            echo -e "\033[0;31mSSO login succeeded but SSO token is still unusable for profile $AWS_PROFILE\033[0m" >&2
-            exit 1
-        fi
-    fi
 fi
 
 CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
