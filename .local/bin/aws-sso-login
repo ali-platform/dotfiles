@@ -95,39 +95,49 @@ MIN_LEFT=30
 DATEBIN="date"
 if command -v gdate >/dev/null 2>&1; then DATEBIN="gdate"; fi
 
-EXP_ISO="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null | jq -r '.Expiration')"
+EXP_JSON="$(aws configure export-credentials --profile "$AWS_PROFILE" --format process 2>/dev/null || true)"
+EXP_ISO="$(printf '%s' "$EXP_JSON" | jq -r '.Expiration // empty')"
 
-# Check if credentials are valid before parsing expiration
-if [ -z "$EXP_ISO" ] || [ "$EXP_ISO" = "null" ]; then
-# Credentials don't exist or are invalid, force SSO login
 REMAIN_SECS=-1
-else
-EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null)"
-if [ -z "$EXP_EPOCH" ]; then
-    # Failed to parse expiration date, force SSO login
-    REMAIN_SECS=-1
-else
-    NOW_EPOCH="$("$DATEBIN" -u +%s)"
-    REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
-fi
+if [ -n "$EXP_ISO" ]; then
+    EXP_EPOCH="$("$DATEBIN" -u -d "$EXP_ISO" +%s 2>/dev/null || true)"
+    if [ -n "$EXP_EPOCH" ]; then
+        NOW_EPOCH="$("$DATEBIN" -u +%s)"
+        REMAIN_SECS=$(( EXP_EPOCH - NOW_EPOCH ))
+    fi
 fi
 
 REQUIRED_SECS=$(( MIN_LEFT * 60 ))
+NEED_LOGIN=0
 
-if (( REMAIN_SECS >= REQUIRED_SECS )); then
-# Success
-REMAIN_MIN=$(( REMAIN_SECS / 60 ))
-echo "OK: ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})."
-else
-# Not enough time left
-if (( REMAIN_SECS > 0 )); then
-    REMAIN_MIN=$(( REMAIN_SECS / 60 ))
-    echo "NOT OK: only ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})." >&2
-else
-    echo "NOT OK: credentials already expired (expired at ${EXP_ISO})." >&2
+# Soft expiration check
+if (( REMAIN_SECS < REQUIRED_SECS )); then
+    NEED_LOGIN=1
 fi
-echo -e "\033[0;36mAuthenticating with SSO\033[0m"
-aws sso login
+
+# Hard validity check (authoritative)
+if ! aws sts get-caller-identity --profile "$AWS_PROFILE" --output json >/dev/null 2>&1; then
+    NEED_LOGIN=1
+fi
+
+if (( NEED_LOGIN == 0 )); then
+    REMAIN_MIN=$(( REMAIN_SECS / 60 ))
+    echo "OK: ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})."
+else
+    if (( REMAIN_SECS > 0 )); then
+        REMAIN_MIN=$(( REMAIN_SECS / 60 ))
+        echo "NOT OK: only ${REMAIN_MIN} minutes left (expires at ${EXP_ISO})." >&2
+    else
+        echo "NOT OK: credentials missing/expired/invalid (expires at ${EXP_ISO:-unknown})." >&2
+    fi
+    echo -e "\033[0;36mAuthenticating with SSO\033[0m"
+    aws sso login --profile "$AWS_PROFILE"
+
+    # Re-validate after login
+    if ! aws sts get-caller-identity --profile "$AWS_PROFILE" --output json >/dev/null 2>&1; then
+        echo -e "\033[0;31mSSO login succeeded but credentials are still unusable for profile $AWS_PROFILE\033[0m" >&2
+        exit 1
+    fi
 fi
 
 CLUSTER=$(aws eks list-clusters --query clusters[0] --output text)
