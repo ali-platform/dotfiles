@@ -95,4 +95,3 @@ alias yup='yarn set version stable && npx yarn-upgrade-all'
 
 alias sbp='source ~/.bash_profile'
 alias slo='source ~/.local/bin/aws-sso-login'
-alias pss='source ~/.local/bin/pulumi-stack-select'

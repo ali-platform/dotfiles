@@ -89,7 +89,7 @@ if ! grep -q "\[profile $AWS_PROFILE\]" ~/.aws/config; then
 fi
 
 echo -e "\033[0;36mUsing AWS account $AWS_PROFILE\033[0m"
-MIN_LEFT=30
+MIN_LEFT=60
 
 # Pick date command (gdate on macOS with coreutils)
 DATEBIN="date"
@@ -109,29 +109,10 @@ fi
 
 REQUIRED_SECS=$(( MIN_LEFT * 60 ))
 NEED_LOGIN=0
-IS_SSO_PROFILE=0
 
-SSO_START_URL="$(aws configure get sso_start_url --profile "$AWS_PROFILE" 2>/dev/null || true)"
-SSO_SESSION_NAME="$(aws configure get sso_session --profile "$AWS_PROFILE" 2>/dev/null || true)"
-if [ -n "$SSO_START_URL" ] || [ -n "$SSO_SESSION_NAME" ]; then
-    IS_SSO_PROFILE=1
-fi
-
-# Soft expiration check
-if (( REMAIN_SECS < REQUIRED_SECS )); then
+# Expiration-only check
+if (( REMAIN_SECS < 0 )) || (( REMAIN_SECS < REQUIRED_SECS )); then
     NEED_LOGIN=1
-fi
-
-# Hard validity check (authoritative)
-if ! aws sts get-caller-identity --profile "$AWS_PROFILE" --output json >/dev/null 2>&1; then
-    NEED_LOGIN=1
-fi
-
-# Additional SSO access-token check (catches cases where role creds look valid but SSO token is invalid)
-if (( IS_SSO_PROFILE == 1 )); then
-    if ! aws sso list-accounts --profile "$AWS_PROFILE" --max-results 1 --output json >/dev/null 2>&1; then
-        NEED_LOGIN=1
-    fi
 fi
 
 if (( NEED_LOGIN == 0 )); then
