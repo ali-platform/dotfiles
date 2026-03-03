@@ -116,5 +116,4 @@ if ! shopt -oq posix; then
   fi
 fi
 
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
+eval `keychain --quiet --eval --agents ssh ~/.ssh/id_ed25519`
