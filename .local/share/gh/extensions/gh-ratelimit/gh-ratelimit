@@ -1,0 +1,31 @@
+#!/bin/bash
+RESPONSE=$(gh api rate_limit)
+NOW=$(date +%s)
+
+print_limit() {
+  local NAME=$1
+  local REMAINING=$(echo $RESPONSE | jq ".resources.${NAME}.remaining")
+  local LIMIT=$(echo $RESPONSE | jq ".resources.${NAME}.limit")
+  local RESET=$(echo $RESPONSE | jq ".resources.${NAME}.reset")
+  local USED=$(( $LIMIT - $REMAINING ))
+  local MINUTES=$(( ($RESET - $NOW) / 60 ))
+
+  if [ $MINUTES -le 0 ]; then
+    echo "$NAME: You have $REMAINING api calls out of $LIMIT left. The window has already reset."
+  else
+    echo "$NAME: You have $REMAINING api calls out of $LIMIT left. The window resets in $MINUTES minutes."
+  fi
+}
+
+# Always show core
+print_limit "core"
+
+# Show others only if usage is above 80%
+for RESOURCE in search graphql code_search integration_manifest; do
+  REMAINING=$(echo $RESPONSE | jq ".resources.${RESOURCE}.remaining")
+  LIMIT=$(echo $RESPONSE | jq ".resources.${RESOURCE}.limit")
+  USED=$(( $LIMIT - $REMAINING ))
+  if [ $LIMIT -gt 0 ] && [ $(( $USED * 100 / $LIMIT )) -gt 80 ]; then
+    print_limit "$RESOURCE"
+  fi
+done
