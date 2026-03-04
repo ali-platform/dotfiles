@@ -29,6 +29,8 @@ sso_start_url = https://acceleratelearning.awsapps.com/start
 sso_region = us-east-2
 sso_account_id = $id
 sso_role_name = Administrator
+sso_registration_scopes = sso:account:access
+sso_session_duration = 18h
 region = us-east-2
 output = json
 EOL
