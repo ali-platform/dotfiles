@@ -116,5 +116,4 @@ if ! shopt -oq posix; then
   fi
 fi
 
-/usr/bin/keychain $HOME/.ssh/id_ed25519
-source $HOME/.keychain/$HOSTNAME-sh
+eval $(keychain --quiet --eval --agents ssh id_ed25519)
