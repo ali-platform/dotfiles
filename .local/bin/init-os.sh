@@ -258,8 +258,13 @@ echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mCreate symlinks to Windows host\e[0m"
 rm -rf ~/.aws
 ln -sf "$USERPROFILE/.aws" "$HOME/.aws"
-rm -rf ~/.ssh
-ln -sf "$USERPROFILE/.ssh" "$HOME/.ssh"
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+ln -sf "$USERPROFILE/.ssh/config" "$HOME/.ssh/config"
+ln -sf "$USERPROFILE/.ssh/id_ed25519" "$HOME/.ssh/id_ed25519"
+ln -sf "$USERPROFILE/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ed25519.pub"
+ssh-keyscan github.com >> ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
