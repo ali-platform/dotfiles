@@ -12,6 +12,7 @@ export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 export KUBERNETES_EXEC_INFO='{"apiVersion": "client.authentication.k8s.io/v1beta1"}'
 export NODE_OPTIONS="--max-old-space-size=8192"
+export NODE_NO_WARNINGS=1
 export ALI_GITHUB_PACKAGE_READER_TOKEN=$(gh auth token)
 export NPM_AUTH_TOKEN=$(gh auth token)
 export NX_TUI=false
