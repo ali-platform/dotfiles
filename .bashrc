@@ -119,6 +119,7 @@ fi
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 
 if ! ss -lx | grep -qF "$SSH_AUTH_SOCK"; then
+    rm -f $SSH_AUTH_SOCK
     NPIPERELAY=$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.local/bin/npiperelay.exe
     ( setsid socat \
         UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early \
