@@ -258,6 +258,9 @@ echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mCreate symlinks to Windows host\e[0m"
 rm -rf ~/.aws
 ln -sf "$USERPROFILE/.aws" "$HOME/.aws"
+rm -rf ~/.kube
+mkdir -p "$USERPROFILE/.kube"
+ln -sf "$USERPROFILE/.kube" "$HOME/.kube"
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 ln -sf "$USERPROFILE/.ssh/config" "$HOME/.ssh/config"
