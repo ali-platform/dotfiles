@@ -132,7 +132,8 @@ fi
 if ! pgrep -x socat > /dev/null; then
     rm -f $SSH_AUTH_SOCK
     NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
-    echo "NPIPERELAY: $NPIPERELAY"
+    # Command for troubleshooting
+    # echo "NPIPERELAY: $NPIPERELAY"
     ( socat \
         UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
         EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
