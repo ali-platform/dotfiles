@@ -118,14 +118,10 @@ fi
 
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 
-# Start relay if not already running
-ss -a | grep -q $SSH_AUTH_SOCK
-if [ $? -ne 0 ]; then
-    rm -f $SSH_AUTH_SOCK
-    RELAY_CMD="$USERPROFILE/.local/bin/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent"
-
+if ! ss -a | grep -qF "$SSH_AUTH_SOCK"; then
+    NPIPERELAY=$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.local/bin/npiperelay.exe
     ( setsid socat \
-        UNIX-LISTEN:$SSH_AUTH_SOCK,fork \
-        EXEC:"/bin/sh -c '$RELAY_CMD'",nofork \
+        UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early \
+        EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
     & )
 fi
