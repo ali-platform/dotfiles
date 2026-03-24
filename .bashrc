@@ -122,8 +122,10 @@ export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 ss -a | grep -q $SSH_AUTH_SOCK
 if [ $? -ne 0 ]; then
     rm -f $SSH_AUTH_SOCK
+    RELAY_CMD="$USERPROFILE/.local/bin/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent"
+
     ( setsid socat \
         UNIX-LISTEN:$SSH_AUTH_SOCK,fork \
-        EXEC:"$USERPROFILE/.local/bin/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork \
+        EXEC:"/bin/sh -c '$RELAY_CMD'",nofork \
     & )
 fi
