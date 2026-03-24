@@ -278,11 +278,6 @@ sudo systemctl restart systemd-binfmt
 sudo systemctl mask systemd-binfmt.service
 
 
-
-# Initialize ssh-agent
-# https://unix.stackexchange.com/questions/339840/how-to-start-and-use-ssh-agent-as-systemd-service
-#systemctl --user enable --now ssh-agent
-
 # echo ''
 # echo -e "\e[1;36m------\e[0m"
 # echo -e "\e[1;36mConfigure docker group\e[0m"
