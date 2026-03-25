@@ -49,10 +49,11 @@ if [ "$available_version" != "$installed_version" ]; then
     sudo ln -s --force /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
     rm /tmp/powershell.tar.gz
 
+    pwsh -NoProfile -Command 'Write-Host "PowerShell updated to version $($PSVersionTable.PSVersion)" -ForegroundColor Green'
+    pwsh -NoProfile -Command 'Set-PSResourceRepository -Name PSGallery -Trusted'
+
 
 pwsh -NoProfile -Command - <<'EOF'
-Set-PSResourceRepository -Name PSGallery -Trusted
-
 Install-PSResource AWS.Tools.Installer -Reinstall
 Install-AWSToolsModule AWS.Tools.SecurityToken,AWS.Tools.SSO,AWS.Tools.SSOOIDC,AWS.Tools.EC2,AWS.Tools.S3,AWS.Tools.SimpleNotificationService,AWS.Tools.SQS,AWS.Tools.DynamoDBv2 -CleanUp -Force
 
@@ -62,7 +63,6 @@ Install-PSResource posh-git -Reinstall
 Install-PSResource PowerShellForGitHub -Reinstall
 Install-PSResource ImportExcel -Reinstall
 Install-PSResource Microsoft.Graph -Reinstall
-cls
 EOF
 
 fi
