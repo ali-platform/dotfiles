@@ -63,3 +63,14 @@ complete -C aws_completer aws
 #         sudo hwclock -s
 #         sudo ntpdate time.windows.com
 # }
+
+export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
+
+if ! pgrep -f "$USERPROFILE/.local/bin/npiperelay.exe" > /dev/null; then
+    rm -f $SSH_AUTH_SOCK
+    NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
+    ( socat \
+        UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
+        EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
+    & )
+fi
