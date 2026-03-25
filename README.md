@@ -7,9 +7,26 @@ https://github.com/ali-platform/boxstarter
 
 Open a WSL session and run this batch of commands
 ```
+sudo DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install socat
+
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+ln -sf "$USERPROFILE/.ssh/config" "$HOME/.ssh/config"
+ln -sf "$USERPROFILE/.ssh/id_ed25519" "$HOME/.ssh/id_ed25519"
+ln -sf "$USERPROFILE/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ed25519.pub"
+ssh-keyscan github.com >> ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
+
+export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
+rm -f $SSH_AUTH_SOCK
+NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
+( socat \
+    UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
+    EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
+& )
+
 alias dotfiles='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
-git config --global credential.helper "/mnt/c/Program\ Files/Git/mingw64/bin/git-credential-manager.exe"
-git clone --bare "https://github.com/ali-platform/dotfiles.git" $HOME/.cfg
+git clone --bare "git@github.com:ali-platform/dotfiles.git" $HOME/.cfg
 dotfiles config --local status.showUntrackedFiles no
 dotfiles checkout -f main
 

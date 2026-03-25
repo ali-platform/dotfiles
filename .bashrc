@@ -122,12 +122,12 @@ fi
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 
 # Kill any socat not using the correct npiperelay path
-if pgrep -x socat > /dev/null; then
-    if ! pgrep -f "$USERPROFILE/.local/bin/npiperelay.exe" > /dev/null; then
-        pkill socat
-        rm -f $SSH_AUTH_SOCK
-    fi
-fi
+# if pgrep -x socat > /dev/null; then
+#     if ! pgrep -f "$USERPROFILE/.local/bin/npiperelay.exe" > /dev/null; then
+#         pkill socat
+#         rm -f $SSH_AUTH_SOCK
+#     fi
+# fi
 
 if ! pgrep -x socat > /dev/null; then
     rm -f $SSH_AUTH_SOCK
