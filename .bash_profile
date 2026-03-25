@@ -52,20 +52,14 @@ fi
 complete -F __start_kubectl k
 complete -C aws_completer aws
 
-
 # Configure nvm
 # export NVM_DIR="$HOME/.nvm"
 # [ -s "/home/linuxbrew/.linuxbrew/opt/nvm/nvm.sh" ] && \. "/home/linuxbrew/.linuxbrew/opt/nvm/nvm.sh"  # This loads nvm
 # [ -s "/home/linuxbrew/.linuxbrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/home/linuxbrew/.linuxbrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
 
-# update_clock () {
-#         echo '[ROOT] Updating clock (sudo hwclock --hctosys)'
-#         sudo hwclock -s
-#         sudo ntpdate time.windows.com
-# }
-
-export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
-
+# Setup a relay between the Windows SSH agent and WSL.
+# This allows you to use your Windows SSH keys in WSL without
+# having to copy them over or run a separate agent in WSL.
 if ! pgrep -f "$USERPROFILE/.local/bin/npiperelay.exe" > /dev/null; then
     rm -f $SSH_AUTH_SOCK
     NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
