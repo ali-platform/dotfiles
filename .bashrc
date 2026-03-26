@@ -125,6 +125,13 @@ fi
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 
 # Test if SSH agent is actually functional (not just if socket exists)
+# There has bee a lot of work to figure this out.  Something is starting
+# .bashrc early and the socat process is started, but it is not working.
+# Originally, I thought it was because we were trying to use USERPROFILE to
+# find the location of npiperelay.exe, but that is not the case.
+# So, now the logic is to actually try using ssh and validate that the
+# pipe is working.  If it is not working, then we will kill any existing socat processes
+# and start a new one.  This should ensure that we have a working ssh agent in WSL.
 ssh-add -l >/dev/null 2>&1
 exit_code=$?
 
