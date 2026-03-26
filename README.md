@@ -19,11 +19,7 @@ chmod 600 ~/.ssh/known_hosts
 
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
 rm -f $SSH_AUTH_SOCK
-NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
-( socat \
-    UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
-    EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
-& )
+( setsid socat UNIX-LISTEN:${SSH_AUTH_SOCK},fork EXEC:"npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork & ) >/dev/null 2>&1
 
 alias dotfiles='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
 git clone --bare "git@github.com:ali-platform/dotfiles.git" $HOME/.cfg
