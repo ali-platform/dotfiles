@@ -56,15 +56,3 @@ complete -C aws_completer aws
 # export NVM_DIR="$HOME/.nvm"
 # [ -s "/home/linuxbrew/.linuxbrew/opt/nvm/nvm.sh" ] && \. "/home/linuxbrew/.linuxbrew/opt/nvm/nvm.sh"  # This loads nvm
 # [ -s "/home/linuxbrew/.linuxbrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/home/linuxbrew/.linuxbrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
-
-# Setup a relay between the Windows SSH agent and WSL.
-# This allows you to use your Windows SSH keys in WSL without
-# having to copy them over or run a separate agent in WSL.
-if ! pgrep -f "$USERPROFILE/.local/bin/npiperelay.exe" > /dev/null; then
-    rm -f $SSH_AUTH_SOCK
-    NPIPERELAY="$USERPROFILE/.local/bin/npiperelay.exe"
-    ( socat \
-        UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
-        EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
-    & )
-fi

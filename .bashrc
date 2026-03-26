@@ -117,3 +117,15 @@ if ! shopt -oq posix; then
 fi
 
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
+
+# Setup a relay between the Windows SSH agent and WSL.
+# This allows you to use your Windows SSH keys in WSL without
+# having to copy them over or run a separate agent in WSL.
+if ! pgrep -f "npiperelay.exe" > /dev/null; then
+    rm -f $SSH_AUTH_SOCK
+    NPIPERELAY=$(find /mnt/c/Users/*/AppData/Local/Microsoft/WinGet/Packages -name "npiperelay.exe" 2>/dev/null | head -1)
+    ( socat \
+        UNIX-LISTEN:$SSH_AUTH_SOCK,fork,unlink-early,unlink-close \
+        EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork \
+    & )
+fi
