@@ -123,8 +123,16 @@ fi
 # having to copy them over or run a separate agent in WSL.
 # npiperelay must be installed by Intune before running this
 export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
-ss -a | grep -q $SSH_AUTH_SOCK
-if [ $? -ne 0   ]; then
+
+# Test if SSH agent is actually functional (not just if socket exists)
+ssh-add -l >/dev/null 2>&1
+exit_code=$?
+
+# Exit code 2 means "cannot connect to agent" (stale/missing)
+# Exit codes 0/1 mean agent is working (0=has keys, 1=no keys)
+if [ $exit_code -eq 2 ]; then
+    # Kill any orphaned socat processes for this socket
+    pkill -f "socat.*$(basename $SSH_AUTH_SOCK)" >/dev/null 2>&1
     rm -f ${SSH_AUTH_SOCK}
     ( setsid socat UNIX-LISTEN:${SSH_AUTH_SOCK},fork EXEC:"npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork & ) >/dev/null 2>&1
 fi
