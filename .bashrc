@@ -137,7 +137,7 @@ exit_code=$?
 
 # Exit code 2 means "cannot connect to agent" (stale/missing)
 # Exit codes 0/1 mean agent is working (0=has keys, 1=no keys)
-if [ $exit_code -eq 2 ]; then
+if [ ! $exit_code -eq 0 ]; then
     # Kill any orphaned socat processes for this socket
     pkill -f "socat.*$(basename $SSH_AUTH_SOCK)" >/dev/null 2>&1
     rm -f ${SSH_AUTH_SOCK}
