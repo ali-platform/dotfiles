@@ -85,7 +85,7 @@ fi
 # Verify that AWS_PROFILE exists in ~/.aws/config
 if ! grep -q "\[profile $AWS_PROFILE\]" ~/.aws/config; then
   echo -e "\033[0;31mAWS_PROFILE $AWS_PROFILE not found in ~/.aws/config\033[0m"
-  exit 1
+  return 1
 fi
 
 echo -e "\033[0;36mUsing AWS account $AWS_PROFILE\033[0m"
