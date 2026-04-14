@@ -237,6 +237,9 @@ chmod 600 ~/.ssh/known_hosts
 # sudo systemctl restart systemd-binfmt
 # sudo systemctl mask systemd-binfmt.service
 
+# Make sure user can run docker without sudo
+sudo usermod -aG docker $USER
+
 
 sudo curl -s https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh
 
