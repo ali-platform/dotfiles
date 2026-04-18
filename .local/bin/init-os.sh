@@ -229,6 +229,10 @@ chmod 600 ~/.ssh/known_hosts
 # sudo systemctl mask systemd-binfmt.service
 
 # Make sure user can run docker without sudo
+# Create docker group if it doesn't exist with gid 1001 (same as Windows Docker Desktop)
+if ! getent group docker > /dev/null; then
+  sudo groupadd -g 1001 docker
+fi
 sudo usermod -aG docker $USER
 
 
