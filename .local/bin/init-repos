@@ -68,7 +68,7 @@ CloneRepos() {
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
             echo -e "\033[0;36mCloning $ssh_url\033[0m"
-            git clone "$ssh_url" "$path"
+            git clone --depth 1 "$ssh_url" "$path"
         else
             if [[ "$refresh" == "true" ]]; then
                 echo -e "\033[0;36mUpdating $repo_name\033[0m"
