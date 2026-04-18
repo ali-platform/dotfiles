@@ -25,7 +25,7 @@ is_protected=$(echo "$branch_info" | jq -r '.protected // false')
 
 if [[ "$is_protected" == "true" ]]; then
     echo "Opening $branch_name branch for $owner/$repo"
-    
+
     protection='{
         "restrictions": {
             "users": [],
@@ -43,7 +43,7 @@ if [[ "$is_protected" == "true" ]]; then
         "enforce_admins": false,
         "required_status_checks": null
     }'
-    
+
     curl -s -H "Authorization: token $token" \
         -H "Content-Type: application/json" \
         -X PUT \
