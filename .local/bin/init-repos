@@ -1,114 +1,149 @@
-#!/usr/bin/env pwsh
-[CmdletBinding()]
-param (
-    [Parameter()]
-    [Switch]
-    $Refresh    # Update folders that are already present
-)
+#!/usr/bin/env bash
+set -e
 
-function CloneRepos([string]$folder, [Object[]]$repos, [bool]$refresh) {
-    $folder_list = @(
-        "action",
-        "aws-account",
-        "cloud-engineering",
-        "container",
-        "github",
-        "ss-github",
-        "kubernetes",
-        "packer",
-        "php-lib",
-        "platform",
-        "pulumi",
-        "repository-template",
+# Parse command line arguments
+REFRESH=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -r|--refresh)
+            REFRESH=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [-r|--refresh]"
+            exit 1
+            ;;
+    esac
+done
+
+# Function to clone repositories
+CloneRepos() {
+    local folder="$1"
+    local repos_json="$2"
+    local refresh="$3"
+
+    local folder_list=(
+        "action"
+        "aws-account"
+        "cloud-engineering"
+        "container"
+        "github"
+        "ss-github"
+        "kubernetes"
+        "packer"
+        "php-lib"
+        "platform"
+        "pulumi"
+        "repository-template"
         "workflow"
     )
 
-    if ($repos) {
-        $repos | ForEach-Object {
-            $repo_name = $_.name
-            $sub_folder = $folder_list | Where-Object { $repo_name.StartsWith($_) }
-            $path = Join-Path $env:HOME "src" $folder $sub_folder
-            if (-Not (Test-Path $path)) {
-                New-Item $path -ItemType Directory -Force | Out-Null
-            }
-            $path = Join-Path $path $repo_name
-            if (-Not (Test-Path $path)) {
-                Write-Host -ForegroundColor Cyan "Cloning $($_.sshUrl)"
-                git clone $_.sshUrl $path
-            }
-            else {
-                if ($refresh) {
-                    Write-Host -ForegroundColor Cyan "Updating $repo_name"
-                    Push-Location $path
-                    git pull
-                    Pop-Location
-                }
-            }
-            $tags = @()
-            if ($sub_folder) {
-                $tags += "$folder/$sub_folder"
-            }
-            else {
-                $tags += "$folder"
-            }
-            [PSCustomObject]@{
-                name     = $repo_name
-                rootPath = "vscode-remote://wsl+$($env:WSL_DISTRO_NAME)/$path"
-                tags     = $tags
-                enabled  = $true
-            }
-        }
-    }
-    else {
-        @()
-    }
+    if [[ -z "$repos_json" ]]; then
+        return
+    fi
+
+    echo "$repos_json" | jq -c '.[]' | while read -r repo; do
+        local repo_name=$(echo "$repo" | jq -r '.name')
+        local ssh_url=$(echo "$repo" | jq -r '.sshUrl')
+
+        # Find matching subfolder
+        local sub_folder=""
+        for prefix in "${folder_list[@]}"; do
+            if [[ "$repo_name" == "$prefix"* ]]; then
+                sub_folder="$prefix"
+                break
+            fi
+        done
+
+        # Create directory path
+        local path="$HOME/src/$folder"
+        if [[ -n "$sub_folder" ]]; then
+            path="$path/$sub_folder"
+        fi
+        mkdir -p "$path"
+
+        path="$path/$repo_name"
+
+        # Clone or update repository
+        if [[ ! -d "$path" ]]; then
+            echo -e "\033[0;36mCloning $ssh_url\033[0m"
+            git clone "$ssh_url" "$path"
+        else
+            if [[ "$refresh" == "true" ]]; then
+                echo -e "\033[0;36mUpdating $repo_name\033[0m"
+                pushd "$path" > /dev/null
+                git pull
+                popd > /dev/null
+            fi
+        fi
+
+        # Build tags array
+        local tags
+        if [[ -n "$sub_folder" ]]; then
+            tags="[\"$folder/$sub_folder\"]"
+        else
+            tags="[\"$folder\"]"
+        fi
+
+        # Output project item JSON
+        jq -n \
+            --arg name "$repo_name" \
+            --arg rootPath "file://$path" \
+            --argjson tags "$tags" \
+            '{name: $name, rootPath: $rootPath, tags: $tags, enabled: true}'
+    done
 }
 
-function CloneOrgRepos([string]$org, [bool]$refresh) {
-    Write-Host -ForegroundColor Green "Processing organization: $org"
-    $repos = gh repo list $org --no-archived --json "name,sshUrl" --limit 500 | ConvertFrom-Json | Sort-Object name
-    if( $org -eq "studysocial" ) {
-        $repos = $repos | Where-Object { $_.name -like "ss*" -or $_.name -like "platform*" -or $_.name -like "container*" -or $_.name -like "*lambda*" -or $_.name -like "github*" }
-    }
-    CloneRepos $org $repos $Refresh
+# Function to clone organization repositories
+CloneOrgRepos() {
+    local org="$1"
+    local refresh="$2"
+
+    echo -e "\033[0;32mProcessing organization: $org\033[0m"
+
+    local repos=$(gh repo list "$org" --no-archived --json "name,sshUrl" --limit 500)
+
+    # Filter studysocial repos
+    if [[ "$org" == "studysocial" ]]; then
+        repos=$(echo "$repos" | jq '[.[] | select(.name | test("^(ss|platform|container|github)") or test("lambda"))]')
+    fi
+
+    CloneRepos "$org" "$repos" "$refresh"
 }
 
+# Get GitHub profile
+if [[ -f "$HOME/.config/gh/hosts.yml" ]]; then
+    github_profile=$(grep -A 1 "github.com:" "$HOME/.config/gh/hosts.yml" | grep "user:" | awk '{print $2}')
+else
+    echo "Unable to locate GitHub user profile name, try gh auth login"
+    exit 1
+fi
 
-if ($env:APPDATA) {
-    $github_profile = (Get-Content "$($env:APPDATA)/GitHub CLI/hosts.yml" | ConvertFrom-Yaml).'github.com'.user
-}
-elseif ($env:HOME) {
-    $github_profile = (Get-Content "$($env:HOME)/.config/gh/hosts.yml" | ConvertFrom-Yaml).'github.com'.user
-}
-else {
-    throw "Unable to locate GitHub user profile name, try gh auth login"
-}
+# Initialize project items array
+project_items_file=$(mktemp)
 
-$project_items = @()
-$repos = @(
-    @{
-        name = "dotfiles"
-        url  = "https://github.com/$github_profile/dotfiles"
-    }
-)
-
-$project_items += CloneOrgRepos "AccelerateLearning" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-back-office" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-data-gov" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-marketing" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-one-platform" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-onramp" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-open" $Refresh.IsPresent
-$project_items += CloneOrgRepos "ali-platform" $Refresh.IsPresent
-$project_items += CloneOrgRepos "stemscopes-v3" $Refresh.IsPresent
-$project_items += CloneOrgRepos "stemscopes-v4" $Refresh.IsPresent
-$project_items += CloneOrgRepos "studysocial" $Refresh.IsPresent
-
+# Clone all organization repos
+CloneOrgRepos "AccelerateLearning" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-back-office" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-data-gov" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-marketing" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-one-platform" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-onramp" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-open" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "ali-platform" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v3" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v4" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "studysocial" "$REFRESH" >> "$project_items_file"
 
 # Create project manager file
-$path = "$($env:USERPROFILE)/AppData/Roaming/Code/User/globalStorage/alefragnani.project-manager"
-if (-Not (Test-Path $path)) {
-    New-Item -ItemType Directory $path -Force -ErrorAction SilentlyContinue | Out-Null
-}
+pm_path="$HOME/.config/Code/User/globalStorage/alefragnani.project-manager"
+mkdir -p "$pm_path"
 
-$project_items | ConvertTo-Json | Set-Content "$path/projects.json"
+# Combine all project items into a JSON array
+jq -s '.' "$project_items_file" > "$pm_path/projects.json"
+
+# Cleanup
+rm "$project_items_file"
+
+echo -e "\033[0;32mDone! Project list saved to $pm_path/projects.json\033[0m"
