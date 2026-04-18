@@ -150,7 +150,7 @@ CloneOrgRepos "stemscopes-v4" "$REFRESH" >> "$project_items_file"
 CloneOrgRepos "studysocial" "$REFRESH" >> "$project_items_file"
 
 # Create project manager file
-pm_path="$HOME/.config/Code/User/globalStorage/alefragnani.project-manager"
+pm_path="$USERPROFILE/AppData/Roaming/Code/User/globalStorage/alefragnani.project-manager"
 mkdir -p "$pm_path"
 
 # Combine all project items into a JSON array
