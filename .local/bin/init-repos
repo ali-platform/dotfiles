@@ -43,6 +43,12 @@ CloneRepos() {
         return
     fi
 
+    # Skip if input is not valid JSON array.
+    if ! echo "$repos_json" | jq -e 'type == "array"' > /dev/null 2>&1; then
+        echo -e "\033[0;33mSkipping invalid repository payload for $folder\033[0m" >&2
+        return
+    fi
+
     echo "$repos_json" | jq -c '.[]' | while read -r repo; do
         local repo_name=$(echo "$repo" | jq -r '.name')
         local ssh_url=$(echo "$repo" | jq -r '.sshUrl')
@@ -67,11 +73,11 @@ CloneRepos() {
 
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
-            echo -e "\033[0;36mCloning $ssh_url\033[0m"
+            echo -e "\033[0;36mCloning $ssh_url\033[0m" >&2
             git clone --depth 1 "$ssh_url" "$path"
         else
             if [[ "$refresh" == "true" ]]; then
-                echo -e "\033[0;36mUpdating $repo_name\033[0m"
+                echo -e "\033[0;36mUpdating $repo_name\033[0m" >&2
                 pushd "$path" > /dev/null
                 git pull
                 popd > /dev/null
@@ -100,13 +106,20 @@ CloneOrgRepos() {
     local org="$1"
     local refresh="$2"
 
-    echo -e "\033[0;32mProcessing organization: $org\033[0m"
+    echo -e "\033[0;32mProcessing organization: $org\033[0m" >&2
 
-    local repos=$(gh repo list "$org" --no-archived --json "name,sshUrl" --limit 500)
+    local repos
+    if ! repos=$(gh repo list "$org" --no-archived --json "name,sshUrl" --limit 500); then
+        echo -e "\033[0;33mUnable to list repos for $org; skipping\033[0m" >&2
+        return
+    fi
 
     # Filter studysocial repos
     if [[ "$org" == "studysocial" ]]; then
-        repos=$(echo "$repos" | jq '[.[] | select(.name | test("^(ss|platform|container|github)") or test("lambda"))]')
+        if ! repos=$(echo "$repos" | jq '[.[] | select(.name | test("^(ss|platform|container|github)") or test("lambda"))]'); then
+            echo -e "\033[0;33mUnable to filter repos for $org; skipping\033[0m" >&2
+            return
+        fi
     fi
 
     CloneRepos "$org" "$repos" "$refresh"
