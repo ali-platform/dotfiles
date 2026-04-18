@@ -1,33 +1,54 @@
-#!/usr/bin/env pwsh
-$owner, $repo = $(([Uri]$(git remote get-url origin)).PathAndQuery | Select-String -Pattern '\/([^\/]*)\/([^\/\.]*)').Matches.Groups | ? Name -ne 0 | % Value
+#!/usr/bin/env bash
+set -e
 
-$token = gh auth token
-$headers = @{ Authorization = "token $token" }
+# Parse owner and repo from git remote URL
+remote_url=$(git remote get-url origin)
+if [[ "$remote_url" =~ ([^/:]+)/([^/\.]+)(\.git)?$ ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+else
+    echo "Error: Could not parse git remote URL" >&2
+    exit 1
+fi
 
-$BranchName = (Get-GitStatus).Branch
+# Get GitHub token
+token=$(gh auth token)
 
-(Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$owner/$repo/branches/$BranchName").where{ $_.protected -eq $True } | % {
-  Write-Host "Opening $BranchName branch for $owner/$repo"
+# Get current branch name
+branch_name=$(git rev-parse --abbrev-ref HEAD)
 
-  $protection = @{
-    restrictions                  = @{
-      users = @()
-      teams = @()
-      apps  = @()
-    }
-    required_pull_request_reviews = @{
-      dismiss_stale_reviews      = $true
-      require_code_owner_reviews = $true
-      dismissal_restrictions     = @{
-        users = @()
-        teams = @()
-      }
-    }
-    enforce_admins                = $false
-    required_status_checks        = $null
-  }
+# Check if branch is protected
+branch_info=$(curl -s -H "Authorization: token $token" \
+    "https://api.github.com/repos/$owner/$repo/branches/$branch_name")
 
-  Invoke-RestMethod -Headers $headers -Method Put -Body ($protection | ConvertTo-Json -Depth 10) "https://api.github.com/repos/$owner/$repo/branches/$BranchName/protection" | Out-Null
-}
+is_protected=$(echo "$branch_info" | jq -r '.protected // false')
+
+if [[ "$is_protected" == "true" ]]; then
+    echo "Opening $branch_name branch for $owner/$repo"
+    
+    protection='{
+        "restrictions": {
+            "users": [],
+            "teams": [],
+            "apps": []
+        },
+        "required_pull_request_reviews": {
+            "dismiss_stale_reviews": true,
+            "require_code_owner_reviews": true,
+            "dismissal_restrictions": {
+                "users": [],
+                "teams": []
+            }
+        },
+        "enforce_admins": false,
+        "required_status_checks": null
+    }'
+    
+    curl -s -H "Authorization: token $token" \
+        -H "Content-Type: application/json" \
+        -X PUT \
+        -d "$protection" \
+        "https://api.github.com/repos/$owner/$repo/branches/$branch_name/protection" > /dev/null
+fi
 
 git push

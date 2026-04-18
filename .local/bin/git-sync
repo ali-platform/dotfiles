@@ -1,15 +1,37 @@
-#!/usr/bin/env pwsh
-$token = gh auth token
-$headers = @{ Authorization = "token $token" }
+#!/usr/bin/env bash
+set -e
 
-$owner, $repo = $($(git remote get-url origin) | Select-String -Pattern '(?:[:/])([^/]+)/([^/\.]+)').Matches.Groups | Where-Object Name -ne 0 | ForEach-Object Value
-$default_branch = (Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$owner/$repo").default_branch
+# Get GitHub token
+token=$(gh auth token)
 
-git checkout $default_branch
+# Parse owner and repo from git remote URL
+remote_url=$(git remote get-url origin)
+if [[ "$remote_url" =~ ([^/:]+)/([^/\.]+)(\.git)?$ ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+else
+    echo "Error: Could not parse git remote URL"
+    exit 1
+fi
+
+# Get default branch from GitHub API
+default_branch=$(curl -s -H "Authorization: token $token" \
+    "https://api.github.com/repos/$owner/$repo" | \
+    jq -r '.default_branch')
+
+# Checkout default branch and sync
+git checkout "$default_branch"
 git fetch --prune --prune-tags --force
 git pull --tags origin --rebase
-$local_branches = $(git for-each-ref --format='%(refname:short)' refs/heads)
-$remove_branches = $(git for-each-ref --format='%(refname:short)' refs/remotes/origin) | % { $_ -replace '^origin/', '' }
-$local_branches | ? { $_ -notin $remove_branches } | % {
-  git branch -D $_
-}
+
+# Get local and remote branches
+local_branches=$(git for-each-ref --format='%(refname:short)' refs/heads)
+remote_branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's|^origin/||')
+
+# Delete local branches that no longer exist on remote
+while IFS= read -r branch; do
+    if ! echo "$remote_branches" | grep -q "^${branch}$"; then
+        git branch -D "$branch"
+    fi
+done <<< "$local_branches"
+

@@ -1,15 +1,24 @@
-#!/usr/bin/env pwsh
-[CmdletBinding()]
-param (
-    [Parameter()]
-    [String]
-    $BranchName = 'main'
-)
+#!/usr/bin/env bash
+set -e
 
-$branch_names = git for-each-ref --format='%(refname:short)' refs/heads
-if ($BranchName -notin $branch_names) {
-  Write-Error "$BranchName is not a valid branch.  Consider: $($branch_names -join ', ')"
-  exit 1
-}
+# Default branch name
+BRANCH_NAME="main"
 
-git reset $(git merge-base $BranchName $(git rev-parse --abbrev-ref HEAD))
+# Parse command line arguments
+if [[ $# -gt 0 ]]; then
+    BRANCH_NAME="$1"
+fi
+
+# Get all local branch names
+branch_names=$(git for-each-ref --format='%(refname:short)' refs/heads)
+
+# Validate that the branch name exists
+if ! echo "$branch_names" | grep -q "^${BRANCH_NAME}$"; then
+    echo "Error: $BRANCH_NAME is not a valid branch. Consider: $(echo $branch_names | tr '\n' ', ' | sed 's/, $//')" >&2
+    exit 1
+fi
+
+# Reset to the merge base
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+merge_base=$(git merge-base "$BRANCH_NAME" "$current_branch")
+git reset "$merge_base"
