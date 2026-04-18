@@ -203,15 +203,6 @@ echo -e "\e[1;36mInitialize corepack\e[0m"
 sudo npm install -g corepack
 corepack enable
 
-. ~/.local/bin/update-os
-
-pwsh -NoProfile -Command - <<'EOF'
-Connect-Graph -NoWelcome -Scopes User.Read.All
-$context = Get-MgContext
-$user = Get-MgUser -UserId $context.Account
-git config --global user.email "$($user.Mail)"
-git config --global user.name "$($user.DisplayName)"
-EOF
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
@@ -248,6 +239,16 @@ if [ ! -f /etc/bash_completion.d/aws.sh ]; then
   echo 'Installing AWS CLI completion for all users...'
   echo 'complete -C /usr/local/bin/aws_completer aws' | sudo tee /etc/bash_completion.d/aws.sh > /dev/null
 fi
+
+. ~/.local/bin/update-os
+
+pwsh -NoProfile -Command - <<'EOF'
+Connect-Graph -NoWelcome -Scopes User.Read.All
+$context = Get-MgContext
+$user = Get-MgUser -UserId $context.Account
+git config --global user.email "$($user.Mail)"
+git config --global user.name "$($user.DisplayName)"
+EOF
 
 echo ''
 echo -e "\e[1;32m------\e[0m"

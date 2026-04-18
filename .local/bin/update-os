@@ -29,43 +29,6 @@ sudo snap refresh
 
 arch=$(dpkg --print-architecture)
 
-echo ''
-echo -e "\e[1;36m------\e[0m"
-echo -e "\e[1;36mInstalling PowerShell from download\e[0m"
-available_version=$(curl -s "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" | jq -r .tag_name | sed 's/v//')
-installed_version=$(pwsh --version 2>/dev/null | grep -oP '(\d+\.)+\d+') || true
-if [ "$available_version" != "$installed_version" ]; then
-    # Powershell downloads don't follow linux arch naming conventions
-    if [ "$arch" == "arm64" ]; then
-        ps_arch="arm64"
-    else
-        ps_arch="x64"
-    fi
-    download_url=$(curl -s "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" | jq -r ".assets[] | select(.name | test(\"linux-$ps_arch.tar\")) | .browser_download_url")
-    curl -L $download_url -o /tmp/powershell.tar.gz
-    sudo mkdir -p /opt/microsoft/powershell/7
-    sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
-    sudo chmod +x /opt/microsoft/powershell/7/pwsh
-    sudo ln -s --force /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
-    rm /tmp/powershell.tar.gz
-
-    pwsh -NoProfile -Command 'Write-Host "PowerShell updated to version $($PSVersionTable.PSVersion)" -ForegroundColor Green'
-    pwsh -NoProfile -Command 'Set-PSResourceRepository -Name PSGallery -Trusted'
-
-
-pwsh -NoProfile -Command - <<'EOF'
-Install-PSResource AWS.Tools.Installer -Reinstall
-Install-AWSToolsModule AWS.Tools.SecurityToken,AWS.Tools.SSO,AWS.Tools.SSOOIDC,AWS.Tools.EC2,AWS.Tools.S3,AWS.Tools.SimpleNotificationService,AWS.Tools.SQS,AWS.Tools.DynamoDBv2 -CleanUp -Force
-
-Install-PSResource PSReadLine -Reinstall
-Install-PSResource Powershell-yaml -Reinstall
-Install-PSResource posh-git -Reinstall
-Install-PSResource PowerShellForGitHub -Reinstall
-Install-PSResource ImportExcel -Reinstall
-Install-PSResource Microsoft.Graph -Reinstall
-EOF
-
-fi
 
 
 echo ''
@@ -113,6 +76,47 @@ curl -sL $download_url -o /tmp/kustomize.tar.gz
 sudo tar -xvf /tmp/kustomize.tar.gz -C /usr/bin/ > /dev/null
 sudo chmod +x /usr/bin/kustomize
 rm /tmp/kustomize.tar.gz
+
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstalling PowerShell from download\e[0m"
+available_version=$(curl -s "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" | jq -r .tag_name | sed 's/v//')
+installed_version=$(pwsh --version 2>/dev/null | grep -oP '(\d+\.)+\d+') || true
+if [ "$available_version" != "$installed_version" ]; then
+    # Powershell downloads don't follow linux arch naming conventions
+    if [ "$arch" == "arm64" ]; then
+        ps_arch="arm64"
+    else
+        ps_arch="x64"
+    fi
+    download_url=$(curl -s "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" | jq -r ".assets[] | select(.name | test(\"linux-$ps_arch.tar\")) | .browser_download_url")
+    curl -L $download_url -o /tmp/powershell.tar.gz
+    sudo mkdir -p /opt/microsoft/powershell/7
+    sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
+    sudo chmod +x /opt/microsoft/powershell/7/pwsh
+    sudo ln -s --force /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+    rm /tmp/powershell.tar.gz
+
+pwsh -NoProfile -Command - <<'EOF'
+Write-Host "PowerShell updated to version $($PSVersionTable.PSVersion)" -ForegroundColor Green
+Set-PSResourceRepository -Name PSGallery -Trusted
+EOF
+
+
+pwsh -NoProfile -Command - <<'EOF'
+Install-PSResource AWS.Tools.Installer -Reinstall
+Install-AWSToolsModule AWS.Tools.SecurityToken,AWS.Tools.SSO,AWS.Tools.SSOOIDC,AWS.Tools.EC2,AWS.Tools.S3,AWS.Tools.SimpleNotificationService,AWS.Tools.SQS,AWS.Tools.DynamoDBv2 -CleanUp -Force
+
+Install-PSResource PSReadLine -Reinstall
+Install-PSResource Powershell-yaml -Reinstall
+Install-PSResource posh-git -Reinstall
+Install-PSResource PowerShellForGitHub -Reinstall
+Install-PSResource ImportExcel -Reinstall
+Install-PSResource Microsoft.Graph -Reinstall
+EOF
+
+fi
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
