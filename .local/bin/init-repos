@@ -67,6 +67,7 @@ AutoFixExistingRepo() {
         git branch --set-upstream-to="$target_upstream" "$current_branch" > /dev/null
     else
         echo -e "\033[0;33mUnable to auto-fix upstream for $repo_name: no suitable origin branch found\033[0m" >&2
+        return 1
     fi
 }
 
