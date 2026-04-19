@@ -3,27 +3,27 @@ set -e
 
 # Parse command line arguments
 REFRESH=false
-REPAIR_SHALLOW=false
+AUTO_FIX=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -r|--refresh)
             REFRESH=true
             shift
             ;;
-        --repair-shallow)
-            REPAIR_SHALLOW=true
+        --auto-fix)
+            AUTO_FIX=true
             shift
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-r|--refresh] [--repair-shallow]"
+            echo "Usage: $0 [-r|--refresh] [--auto-fix]"
             exit 1
             ;;
     esac
 done
 
-# Repair repository state so normal fetch/pull operations get complete refs/history.
-RepairExistingRepo() {
+# Auto-fix repository state so normal fetch/pull operations get complete refs/history.
+AutoFixExistingRepo() {
     local repo_name="$1"
 
     # Ensure all branch refs are fetched, not just a single branch.
@@ -37,6 +37,37 @@ RepairExistingRepo() {
 
     # Refresh refs and tags now that refspec is complete.
     git fetch origin --prune --tags
+
+    # Ensure current branch tracks a valid upstream.
+    local current_branch
+    current_branch=$(git branch --show-current)
+    if [[ -z "$current_branch" ]]; then
+        return
+    fi
+
+    local upstream
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+    if [[ -n "$upstream" ]] && git show-ref --verify --quiet "refs/remotes/$upstream"; then
+        return
+    fi
+
+    local target_upstream=""
+    if git show-ref --verify --quiet "refs/remotes/origin/$current_branch"; then
+        target_upstream="origin/$current_branch"
+    else
+        local remote_head
+        remote_head=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+        if [[ -n "$remote_head" ]] && git show-ref --verify --quiet "refs/remotes/$remote_head"; then
+            target_upstream="$remote_head"
+        fi
+    fi
+
+    if [[ -n "$target_upstream" ]]; then
+        echo -e "\033[0;36mSetting upstream for $repo_name: $current_branch -> $target_upstream\033[0m" >&2
+        git branch --set-upstream-to="$target_upstream" "$current_branch" > /dev/null
+    else
+        echo -e "\033[0;33mUnable to auto-fix upstream for $repo_name: no suitable origin branch found\033[0m" >&2
+    fi
 }
 
 # Update repository safely without failing the whole run on branch tracking issues.
@@ -68,7 +99,7 @@ CloneRepos() {
     local folder="$1"
     local repos_json="$2"
     local refresh="$3"
-    local repair_shallow="$4"
+    local auto_fix="$4"
 
     local folder_list=(
         "action"
@@ -127,9 +158,9 @@ CloneRepos() {
                 git clone "$ssh_url" "$path"
             fi
         else
-            if [[ "$repair_shallow" == "true" ]]; then
+            if [[ "$auto_fix" == "true" ]]; then
                 pushd "$path" > /dev/null
-                RepairExistingRepo "$repo_name"
+                AutoFixExistingRepo "$repo_name"
                 popd > /dev/null
             fi
 
@@ -162,7 +193,7 @@ CloneRepos() {
 CloneOrgRepos() {
     local org="$1"
     local refresh="$2"
-    local repair_shallow="$3"
+    local auto_fix="$3"
 
     echo -e "\033[0;32mProcessing organization: $org\033[0m" >&2
 
@@ -180,7 +211,7 @@ CloneOrgRepos() {
         fi
     fi
 
-    CloneRepos "$org" "$repos" "$refresh" "$repair_shallow"
+    CloneRepos "$org" "$repos" "$refresh" "$auto_fix"
 }
 
 # Get GitHub profile
@@ -195,17 +226,17 @@ fi
 project_items_file=$(mktemp)
 
 # Clone all organization repos
-CloneOrgRepos "AccelerateLearning" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-back-office" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-data-gov" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-marketing" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-one-platform" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-onramp" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-open" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "ali-platform" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "stemscopes-v3" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "stemscopes-v4" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
-CloneOrgRepos "studysocial" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "AccelerateLearning" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-back-office" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-data-gov" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-marketing" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-one-platform" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-onramp" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-open" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-platform" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v3" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v4" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "studysocial" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 
 # Create project manager file
 pm_path="$USERPROFILE/AppData/Roaming/Code/User/globalStorage/alefragnani.project-manager"
