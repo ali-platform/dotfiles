@@ -95,7 +95,7 @@ CloneRepos() {
         # Output project item JSON
         jq -n \
             --arg name "$repo_name" \
-            --arg rootPath "file://$path" \
+            --arg rootPath "vscode-remote://wsl+${WSL_DISTRO_NAME}/$path" \
             --argjson tags "$tags" \
             '{name: $name, rootPath: $rootPath, tags: $tags, enabled: true}'
     done
