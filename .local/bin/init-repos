@@ -3,25 +3,48 @@ set -e
 
 # Parse command line arguments
 REFRESH=false
+REPAIR_SHALLOW=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -r|--refresh)
             REFRESH=true
             shift
             ;;
+        --repair-shallow)
+            REPAIR_SHALLOW=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-r|--refresh]"
+            echo "Usage: $0 [-r|--refresh] [--repair-shallow]"
             exit 1
             ;;
     esac
 done
+
+# Repair repository state so normal fetch/pull operations get complete refs/history.
+RepairExistingRepo() {
+    local repo_name="$1"
+
+    # Ensure all branch refs are fetched, not just a single branch.
+    git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+
+    # Convert shallow clones to full history.
+    if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" == "true" ]]; then
+        echo -e "\033[0;36mRepairing shallow history for $repo_name\033[0m" >&2
+        git fetch --unshallow origin || git fetch --depth=2147483647 origin
+    fi
+
+    # Refresh refs and tags now that refspec is complete.
+    git fetch origin --prune --tags
+}
 
 # Function to clone repositories
 CloneRepos() {
     local folder="$1"
     local repos_json="$2"
     local refresh="$3"
+    local repair_shallow="$4"
 
     local folder_list=(
         "action"
@@ -74,8 +97,18 @@ CloneRepos() {
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
             echo -e "\033[0;36mCloning $ssh_url\033[0m" >&2
-            git clone --depth 1 "$ssh_url" "$path"
+            # Prefer partial clone to keep initial download smaller without losing refs.
+            if ! git clone --filter=blob:none "$ssh_url" "$path"; then
+                echo -e "\033[0;33mPartial clone unsupported, falling back to full clone for $repo_name\033[0m" >&2
+                git clone "$ssh_url" "$path"
+            fi
         else
+            if [[ "$repair_shallow" == "true" ]]; then
+                pushd "$path" > /dev/null
+                RepairExistingRepo "$repo_name"
+                popd > /dev/null
+            fi
+
             if [[ "$refresh" == "true" ]]; then
                 echo -e "\033[0;36mUpdating $repo_name\033[0m" >&2
                 pushd "$path" > /dev/null
@@ -105,6 +138,7 @@ CloneRepos() {
 CloneOrgRepos() {
     local org="$1"
     local refresh="$2"
+    local repair_shallow="$3"
 
     echo -e "\033[0;32mProcessing organization: $org\033[0m" >&2
 
@@ -122,7 +156,7 @@ CloneOrgRepos() {
         fi
     fi
 
-    CloneRepos "$org" "$repos" "$refresh"
+    CloneRepos "$org" "$repos" "$refresh" "$repair_shallow"
 }
 
 # Get GitHub profile
@@ -137,17 +171,17 @@ fi
 project_items_file=$(mktemp)
 
 # Clone all organization repos
-CloneOrgRepos "AccelerateLearning" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-back-office" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-data-gov" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-marketing" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-one-platform" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-onramp" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-open" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "ali-platform" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "stemscopes-v3" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "stemscopes-v4" "$REFRESH" >> "$project_items_file"
-CloneOrgRepos "studysocial" "$REFRESH" >> "$project_items_file"
+CloneOrgRepos "AccelerateLearning" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-back-office" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-data-gov" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-marketing" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-one-platform" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-onramp" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-open" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "ali-platform" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v3" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "stemscopes-v4" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
+CloneOrgRepos "studysocial" "$REFRESH" "$REPAIR_SHALLOW" >> "$project_items_file"
 
 # Create project manager file
 pm_path="$USERPROFILE/AppData/Roaming/Code/User/globalStorage/alefragnani.project-manager"
