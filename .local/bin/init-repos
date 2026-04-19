@@ -158,13 +158,21 @@ CloneRepos() {
                 git clone "$ssh_url" "$path"
             fi
         else
+            local recloned=false
             if [[ "$auto_fix" == "true" ]]; then
                 pushd "$path" > /dev/null
-                AutoFixExistingRepo "$repo_name"
-                popd > /dev/null
+                if ! AutoFixExistingRepo "$repo_name"; then
+                    popd > /dev/null
+                    echo -e "\033[0;33mAuto-fix failed for $repo_name, removing and re-cloning\033[0m" >&2
+                    rm -rf "$path"
+                    git clone "$ssh_url" "$path"
+                    recloned=true
+                else
+                    popd > /dev/null
+                fi
             fi
 
-            if [[ "$refresh" == "true" ]]; then
+            if [[ "$refresh" == "true" && "$recloned" == "false" ]]; then
                 echo -e "\033[0;36mUpdating $repo_name\033[0m" >&2
                 pushd "$path" > /dev/null
                 RefreshExistingRepo "$repo_name"
