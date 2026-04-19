@@ -39,6 +39,30 @@ RepairExistingRepo() {
     git fetch origin --prune --tags
 }
 
+# Update repository safely without failing the whole run on branch tracking issues.
+RefreshExistingRepo() {
+    local repo_name="$1"
+
+    # Keep refs current before deciding whether pull is possible.
+    git fetch origin --prune --tags
+
+    local upstream
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+    if [[ -z "$upstream" ]]; then
+        echo -e "\033[0;33mSkipping pull for $repo_name: current branch has no upstream\033[0m" >&2
+        return
+    fi
+
+    if ! git show-ref --verify --quiet "refs/remotes/$upstream"; then
+        echo -e "\033[0;33mSkipping pull for $repo_name: upstream $upstream is missing on remote\033[0m" >&2
+        return
+    fi
+
+    if ! git pull --ff-only; then
+        echo -e "\033[0;33mSkipping pull for $repo_name: unable to fast-forward\033[0m" >&2
+    fi
+}
+
 # Function to clone repositories
 CloneRepos() {
     local folder="$1"
@@ -112,7 +136,7 @@ CloneRepos() {
             if [[ "$refresh" == "true" ]]; then
                 echo -e "\033[0;36mUpdating $repo_name\033[0m" >&2
                 pushd "$path" > /dev/null
-                git pull
+                RefreshExistingRepo "$repo_name"
                 popd > /dev/null
             fi
         fi
