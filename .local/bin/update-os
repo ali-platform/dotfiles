@@ -96,9 +96,10 @@ if [ "$available_version" != "$installed_version" ]; then
     sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
     sudo chmod +x /opt/microsoft/powershell/7/pwsh
     sudo ln -s --force /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+    mkdir -p ~/.local/share/PSResourceGet
     rm /tmp/powershell.tar.gz
 
-pwsh -NoProfile -Command - <<'EOF'
+sudo pwsh -NoProfile -Command - <<'EOF'
 Write-Host "PowerShell updated to version $($PSVersionTable.PSVersion)" -ForegroundColor Green
 Set-PSResourceRepository -Name PSGallery -Trusted
 EOF
