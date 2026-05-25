@@ -42,6 +42,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install \
   jq \
   bash \
   bash-completion \
+  ripgrep \
   tldr \
   nano \
   xclip \
