@@ -15,6 +15,8 @@ export NODE_OPTIONS="--max-old-space-size=8192"
 export NODE_NO_WARNINGS=1
 export ALI_GITHUB_PACKAGE_READER_TOKEN=$(gh auth token)
 export NPM_AUTH_TOKEN=$(gh auth token)
+export AWS_PROFILE=ali-shared
+export ARM_USE_CLI=true
 export NX_TUI=false
 
 if [[ -n $PS1 ]]; then
