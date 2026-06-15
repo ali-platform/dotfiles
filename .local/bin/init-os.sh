@@ -132,8 +132,9 @@ sudo add-apt-repository -y ppa:deadsnakes/ppa
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInstall Hashicorp GPG keys\e[0m"
-curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
-sudo DEBIAN_FRONTEND=noninteractive apt-add-repository -y "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo rm -rf /usr/share/keyrings/hashicorp-archive-keyring.gpg
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 
 
 echo ''
