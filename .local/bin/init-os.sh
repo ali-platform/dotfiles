@@ -43,7 +43,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --assume-yes install \
   bash \
   bash-completion \
   ripgrep \
-  tldr \
   nano \
   xclip \
   openssl \
