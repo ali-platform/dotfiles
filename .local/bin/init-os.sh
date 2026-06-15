@@ -63,7 +63,9 @@ rm -f ~/.motd_shown
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mAdding PPA for WSLU \e[0m"
-sudo add-apt-repository -y ppa:wslutilities/wslu
+# wslu has no 26.04 (resolute) release yet; add the PPA, then pin it to the latest supported LTS
+sudo add-apt-repository -y --no-update ppa:wslutilities/wslu
+sudo sed -i "s/^Suites: $(lsb_release -cs)$/Suites: noble/" /etc/apt/sources.list.d/wslutilities-ubuntu-wslu-*.sources
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
@@ -94,7 +96,8 @@ sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInstall Azure CLI software repository \e[0m"
-AZ_DIST=$(lsb_release -cs)
+# Azure CLI has no 26.04 (resolute) repo yet; pin to the latest supported LTS
+AZ_DIST=noble
 echo "Types: deb
 URIs: https://packages.microsoft.com/repos/azure-cli/
 Suites: ${AZ_DIST}
@@ -111,8 +114,8 @@ Signed-by: /etc/apt/keyrings/microsoft.gpg" | sudo tee /etc/apt/sources.list.d/a
 echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInstall k6 GPG keys\e[0m"
-sudo gpg -k
-sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+sudo rm -rf /usr/share/keyrings/k6-archive-keyring.gpg
+curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
 
 
