@@ -15,10 +15,11 @@ export NODE_OPTIONS="--max-old-space-size=8192"
 export NODE_NO_WARNINGS=1
 export ALI_GITHUB_PACKAGE_READER_TOKEN=$(gh auth token)
 export NPM_AUTH_TOKEN=$(gh auth token)
-export "pnpm_config_//npm.pkg.github.com/:_authToken=$NPM_AUTH_TOKEN"
 export AWS_PROFILE=ali-shared
 export ARM_USE_CLI=true
 export NX_TUI=false
+
+pnpm config set "//npm.pkg.github.com/:_authToken" "$NPM_AUTH_TOKEN"
 
 if [[ -n $PS1 ]]; then
   # This causes an issue when oh-my-posh is installed with brew since the installation location changes
