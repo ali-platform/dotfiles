@@ -19,6 +19,8 @@ export AWS_PROFILE=ali-shared
 export ARM_USE_CLI=true
 export NX_TUI=false
 
+pnpm config set "@acceleratelearning:registry" "https://npm.pkg.github.com"
+pnpm config set "registry" "https://registry.npmjs.org/"
 pnpm config set "//npm.pkg.github.com/:_authToken" "$NPM_AUTH_TOKEN"
 
 if [[ -n $PS1 ]]; then

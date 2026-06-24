@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -e
+
+# Determine the GitHub owner and repository name from the current git repo.
+if ! REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null) || [ -z "$REMOTE_URL" ]; then
+  echo '[]'
+  exit 0
+fi
+
+# Extract "owner/repo" from either SSH (git@github.com:owner/repo.git)
+# or HTTPS (https://github.com/owner/repo.git) remote URLs.
+REPO_PATH=${REMOTE_URL%.git}    # strip trailing ".git"
+REPO_PATH=${REPO_PATH##*github.com}  # drop everything up to and including "github.com"
+REPO_PATH=${REPO_PATH#[:/]}      # drop the leading ":" or "/" separator
+
+GITHUB_OWNER=${REPO_PATH%%/*}
+GITHUB_REPOSITORY_NAME=${REPO_PATH##*/}
+
+if [ -z "$GITHUB_OWNER" ] || [ -z "$GITHUB_REPOSITORY_NAME" ] || [ "$GITHUB_OWNER" = "$GITHUB_REPOSITORY_NAME" ]; then
+  echo '[]'
+  exit 0
+fi
+
+VERSION=$(pnpm view @acceleratelearning/catalog version)
+pnpm dlx --allow-build=nx @acceleratelearning/catalog@$VERSION repositories --github-owner "$GITHUB_OWNER" --github-repository-name "$GITHUB_REPOSITORY_NAME"

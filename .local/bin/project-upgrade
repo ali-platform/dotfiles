@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
 set -e
-
-# This script (and the generators it runs) need the @acceleratelearning scope
-# pointed at GitHub Packages with an auth token. If the current directory
-# already has an .npmrc, use it as-is. Otherwise create one in the current
-# directory so npm and pnpm (and every child process the generator spawns)
-# pick it up, then remove it on exit.
-if [ ! -f .npmrc ]; then
-  cat > .npmrc <<EOF
-@acceleratelearning:registry=https://npm.pkg.github.com
-registry=https://registry.npmjs.org/
-EOF
-fi
-
 VERSION=$(pnpm view @acceleratelearning/nx-generators version)
 pnpm dlx --allow-build=nx @acceleratelearning/nx-generators@$VERSION --config --execute
