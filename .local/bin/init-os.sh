@@ -205,7 +205,13 @@ echo ''
 echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mInitialize corepack\e[0m"
 sudo npm install -g corepack
-corepack enable
+corepack enable yarn
+corepack enable pnpm
+
+pnpm config set "//npm.pkg.github.com/:_authToken" '${NODE_AUTH_TOKEN}'
+pnpm config set "@acceleratelearning:registry" "https://npm.pkg.github.com"
+pnpm config set "registry" "https://registry.npmjs.org/"
+
 
 
 echo ''
