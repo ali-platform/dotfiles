@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+VERSION=$(pnpm view @acceleratelearning/nx-generators version)
+ARGS="${@:---config --execute}"
+pnpm dlx --allow-build=nx @acceleratelearning/nx-generators@$VERSION $ARGS
