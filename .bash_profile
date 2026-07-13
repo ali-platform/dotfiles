@@ -20,6 +20,24 @@ export AWS_PROFILE=ali-shared
 export ARM_USE_CLI=true
 export NX_TUI=false
 
+# --- SSH agent bridge to Windows OpenSSH (npiperelay + socat) ---
+# Exported here unconditionally for ALL login shells, including the
+# non-interactive login shell VS Code uses to resolve its Git/extension
+# environment. .bashrc only sets this for interactive shells (it returns early
+# for non-interactive ones), so without this the VS Code Source Control UI has
+# no SSH_AUTH_SOCK and falls back to prompting for the key passphrase / failing
+# with "Permission denied (publickey)". The bridge process is (re)started by
+# .bashrc for terminals; here we only restart it if the agent is unreachable.
+export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+if command -v socat >/dev/null 2>&1; then
+  ssh-add -l >/dev/null 2>&1
+  if [ $? -eq 2 ]; then
+    pkill -f "socat.*$(basename "$SSH_AUTH_SOCK")" >/dev/null 2>&1
+    rm -f "$SSH_AUTH_SOCK"
+    ( setsid socat UNIX-LISTEN:"$SSH_AUTH_SOCK",fork EXEC:"npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork & ) >/dev/null 2>&1
+  fi
+fi
+
 if [[ -n $PS1 ]]; then
   # This causes an issue when oh-my-posh is installed with brew since the installation location changes
   # So do it all manually
