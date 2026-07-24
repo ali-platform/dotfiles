@@ -150,6 +150,13 @@ CloneRepos() {
 
         path="$path/$repo_name"
 
+        # Remove a leftover directory that isn't an actual clone (e.g. a hollow
+        # .nx cache or a partial delete) so it gets re-cloned below.
+        if [[ -d "$path" && ! -d "$path/.git" ]]; then
+            echo -e "\033[0;33m$repo_name is missing its .git directory; re-cloning\033[0m" >&2
+            rm -rf "$path"
+        fi
+
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
             echo -e "\033[0;36mCloning $ssh_url\033[0m" >&2
