@@ -150,6 +150,15 @@ CloneRepos() {
 
         path="$path/$repo_name"
 
+        # A directory can linger without being a usable clone (interrupted clone,
+        # leftover tooling cache such as .nx, or a partially deleted repo). Treat
+        # such a directory as missing so it gets re-cloned instead of silently
+        # skipped by the existence check below.
+        if [[ -d "$path" ]] && ! git -C "$path" rev-parse --git-dir > /dev/null 2>&1; then
+            echo -e "\033[0;33m$repo_name exists but is not a valid git repository; re-cloning\033[0m" >&2
+            rm -rf "$path"
+        fi
+
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
             echo -e "\033[0;36mCloning $ssh_url\033[0m" >&2
