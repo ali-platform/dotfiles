@@ -22,14 +22,97 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --yes -o Dpkg::Options::="--force-co
 echo ''
 
 
+arch=$(dpkg --print-architecture)
+if [ "$arch" = "arm64" ]; then
+  aws_arch="aarch64"
+else
+  aws_arch="x86_64"
+fi
+
+# Drop legacy snap installs so apt/binary installs take precedence
+if command -v snap >/dev/null 2>&1; then
+  for snap_pkg in yq yt-dlp aws-cli helm kubectl; do
+    if snap list "$snap_pkg" >/dev/null 2>&1; then
+      echo "Removing snap package: $snap_pkg"
+      sudo snap remove "$snap_pkg" || true
+    fi
+  done
+fi
+
 echo ''
 echo -e "\e[1;36m------\e[0m"
-echo -e "\e[1;36mRefreshing snaps\e[0m"
-sudo snap refresh
+echo -e "\e[1;36mUpdating yq\e[0m"
+available_version=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
+installed_version=$(yq --version 2>/dev/null | awk '{print $NF}') || true
+if [ "$available_version" != "$installed_version" ]; then
+  curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}" -o /tmp/yq
+  sudo install -m 0755 /tmp/yq /usr/local/bin/yq
+  rm -f /tmp/yq
+fi
 
-arch=$(dpkg --print-architecture)
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating yt-dlp\e[0m"
+available_version=$(curl -fsSL "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" | jq -r .tag_name)
+installed_version=$(yt-dlp --version 2>/dev/null) || true
+if [ "$available_version" != "$installed_version" ]; then
+  curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" -o /tmp/yt-dlp
+  sudo install -m 0755 /tmp/yt-dlp /usr/local/bin/yt-dlp
+  rm -f /tmp/yt-dlp
+fi
 
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating AWS CLI\e[0m"
+available_version=$(curl -fsSL "https://api.github.com/repos/aws/aws-cli/tags?per_page=20" | jq -r '.[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+installed_version=$(aws --version 2>&1 | sed -n 's|^aws-cli/\([0-9.]*\).*|\1|p') || true
+if [ -n "$available_version" ] && [ "$available_version" != "$installed_version" ]; then
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o /tmp/awscliv2.zip
+  rm -rf /tmp/aws
+  unzip -q -o /tmp/awscliv2.zip -d /tmp
+  if [ -x /usr/local/bin/aws ]; then
+    sudo /tmp/aws/install --update
+  else
+    sudo /tmp/aws/install
+  fi
+  rm -rf /tmp/aws /tmp/awscliv2.zip
+fi
 
+# Official installer places aws_completer in /usr/local/bin
+if [ ! -f /etc/bash_completion.d/aws.sh ]; then
+  echo 'complete -C /usr/local/bin/aws_completer aws' | sudo tee /etc/bash_completion.d/aws.sh > /dev/null
+fi
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating helm\e[0m"
+if command -v helm >/dev/null 2>&1 && dpkg -s helm >/dev/null 2>&1; then
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install --only-upgrade helm || true
+else
+  available_version=$(curl -fsSL "https://api.github.com/repos/helm/helm/releases/latest" | jq -r .tag_name)
+  installed_version=$(helm version --template '{{.Version}}' 2>/dev/null) || true
+  if [ "$available_version" != "$installed_version" ]; then
+    curl -fsSL "https://get.helm.sh/helm-${available_version}-linux-${arch}.tar.gz" -o /tmp/helm.tar.gz
+    tar -xzf /tmp/helm.tar.gz -C /tmp
+    sudo install -m 0755 "/tmp/linux-${arch}/helm" /usr/local/bin/helm
+    rm -rf "/tmp/linux-${arch}" /tmp/helm.tar.gz
+  fi
+fi
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating kubectl\e[0m"
+if command -v kubectl >/dev/null 2>&1 && dpkg -s kubectl >/dev/null 2>&1; then
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install --only-upgrade kubectl || true
+else
+  available_version=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+  installed_version=$(kubectl version --client -o json 2>/dev/null | jq -r .clientVersion.gitVersion) || true
+  if [ "$available_version" != "$installed_version" ]; then
+    curl -fsSL "https://dl.k8s.io/release/${available_version}/bin/linux/${arch}/kubectl" -o /tmp/kubectl
+    sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+    rm -f /tmp/kubectl
+  fi
+fi
 
 echo ''
 echo -e "\e[1;36m------\e[0m"

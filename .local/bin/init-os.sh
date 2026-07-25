@@ -185,21 +185,37 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get --yes -o Dpkg::Options::="--force-co
 sudo systemctl daemon-reload
 echo ''
 
-sudo snap install yq
-sudo snap install yt-dlp
-sudo snap install aws-cli --classic
-sudo snap install helm --classic
-sudo snap install kubectl --classic
+# Remove any previous snap installs of tools we now install via apt/binaries
+if command -v snap >/dev/null 2>&1; then
+  for snap_pkg in yq yt-dlp aws-cli helm kubectl; do
+    if snap list "$snap_pkg" >/dev/null 2>&1; then
+      echo "Removing snap package: $snap_pkg"
+      sudo snap remove "$snap_pkg" || true
+    fi
+  done
+fi
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
-echo -e "\e[1;36mSetup AWS CLI command completion\e[0m"
-# Create a symbolic link for aws_completer if it doesn't exist
-if ! [ -x "$(command -v aws_completer)" ]; then
-  echo 'Creating symbolic link for aws_completer...'
-  sudo ln -sf /snap/aws-cli/current/bin/aws_completer /usr/local/bin/aws_completer
-fi
+echo -e "\e[1;36mInstall Helm apt repository\e[0m"
+curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list > /dev/null
 
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstall kubectl apt repository\e[0m"
+# pkgs.k8s.io uses versioned channels; pin to the current stable minor
+KUBE_STABLE=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+KUBE_MINOR=$(echo "$KUBE_STABLE" | sed -E 's/^v([0-9]+\.[0-9]+).*/\1/')
+curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_MINOR}/deb/Release.key" | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBE_MINOR}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mInstall helm and kubectl via apt\e[0m"
+sudo DEBIAN_FRONTEND=noninteractive apt-get -yq update
+sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install helm kubectl
 
 echo ''
 echo -e "\e[1;36m------\e[0m"

@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 
-# Create a symbolic link for aws_completer if it doesn't exist
+# Official AWS CLI v2 installer places aws_completer in /usr/local/bin
 if ! [ -x "$(command -v aws_completer)" ]; then
-  echo 'Creating symbolic link for aws_completer...'
-  sudo ln -sf /snap/aws-cli/current/bin/aws_completer /usr/local/bin/aws_completer
+  if [ -x /usr/local/bin/aws_completer ]; then
+    echo 'aws_completer is already installed at /usr/local/bin/aws_completer'
+  else
+    echo 'aws_completer not found. Install AWS CLI v2 first (update-os).' >&2
+    exit 1
+  fi
 fi
 
-# Check if completion is already in .bash_profile
-if grep -q "complete -C aws_completer aws" ~/.bash_profile; then
-  echo "AWS CLI completion is already configured in .bash_profile"
-else
-  echo "Adding AWS CLI completion to .bash_profile"
-  echo "complete -C aws_completer aws" >> ~/.bash_profile
+# System-wide bash completion for all users
+if [ ! -f /etc/bash_completion.d/aws.sh ]; then
+  echo 'Installing AWS CLI completion for all users...'
+  echo 'complete -C /usr/local/bin/aws_completer aws' | sudo tee /etc/bash_completion.d/aws.sh > /dev/null
 fi
-
-# Source bash_profile to apply changes immediately
-source ~/.bash_profile
 
 echo "AWS CLI completion has been set up!"
