@@ -17,6 +17,8 @@ export NODE_AUTH_TOKEN=$(gh auth token)
 export ALI_GITHUB_PACKAGE_READER_TOKEN=$NODE_AUTH_TOKEN
 export NPM_AUTH_TOKEN=$NODE_AUTH_TOKEN
 export AWS_PROFILE=ali-shared
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 export ARM_USE_CLI=true
 export NX_TUI=false
 
