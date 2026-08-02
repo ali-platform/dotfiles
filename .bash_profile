@@ -20,7 +20,7 @@ export AWS_PROFILE=ali-shared
 export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 export ARM_USE_CLI=true
-export NX_TUI=false
+#export NX_TUI=false
 
 if [[ -n $PS1 ]]; then
   # This causes an issue when oh-my-posh is installed with brew since the installation location changes
