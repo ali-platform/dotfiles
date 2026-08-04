@@ -41,3 +41,11 @@ source ~/.bash_profile
 ~/.local/bin/init-repos
 
 ```
+
+If VS Code Remote WSL fails with an error like `Client offered protocol versions [0.6.0] ... server accepts ^0.7.0`, the WSL-side VS Code server is stale. Run:
+
+```
+rm -rf ~/.vscode-server/bin/*
+```
+
+Then reconnect from VS Code so it reinstalls the matching server version. `~/.local/bin/init-os.sh` also performs this cleanup automatically when it detects that the installed WSL server does not match the current VS Code commit.

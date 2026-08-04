@@ -238,6 +238,32 @@ ln -sf "$USERPROFILE/.aws" "$HOME/.aws"
 rm -rf ~/.kube
 mkdir -p "$USERPROFILE/.kube"
 ln -sf "$USERPROFILE/.kube" "$HOME/.kube"
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mReset stale VS Code WSL server when needed\e[0m"
+if command -v code >/dev/null 2>&1; then
+  VSCODE_COMMIT=$(code --version 2>/dev/null | sed -n '2p')
+  if [[ -n "$VSCODE_COMMIT" && -d "$HOME/.vscode-server/bin" ]]; then
+    shopt -s nullglob
+    vscode_server_dirs=("$HOME/.vscode-server/bin"/*)
+    shopt -u nullglob
+    if (( ${#vscode_server_dirs[@]} > 0 )); then
+      has_matching_server=false
+      for server_dir in "${vscode_server_dirs[@]}"; do
+        if [[ "$(basename "$server_dir")" == "$VSCODE_COMMIT" ]]; then
+          has_matching_server=true
+          break
+        fi
+      done
+
+      if [[ "$has_matching_server" == "false" ]]; then
+        echo "Removing stale VS Code WSL server installs so VS Code can reinstall a compatible version"
+        rm -rf "$HOME/.vscode-server/bin"/*
+      fi
+    fi
+  fi
+fi
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 ln -sf "$USERPROFILE/.ssh/config" "$HOME/.ssh/config"
