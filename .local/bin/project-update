@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 set -e
+
+cat >".npmrc" <<'EOF'
+@acceleratelearning:registry=https://npm.pkg.github.com
+registry=https://registry.npmjs.org/
+EOF
+
+
 VERSION=$(pnpm view @acceleratelearning/nx-generators version)
-ARGS="${@:--tags config --execute}"
+ARGS="${@:---tags config --execute}"
 pnpm dlx --allow-build=nx @acceleratelearning/nx-generators@$VERSION $ARGS
