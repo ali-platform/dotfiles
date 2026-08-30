@@ -9,4 +9,5 @@ EOF
 
 VERSION=$(pnpm view @acceleratelearning/nx-generators version)
 ARGS="${@:---tags config --execute}"
+echo -e "\033[32mRunning @acceleratelearning/nx-generators@$VERSION with args: $ARGS\033[0m"
 pnpm dlx --allow-build=nx @acceleratelearning/nx-generators@$VERSION $ARGS
