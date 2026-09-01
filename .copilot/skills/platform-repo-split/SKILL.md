@@ -75,6 +75,9 @@ Out of scope, and must not be attempted:
 14. **Move by state, not by `pulumi import`.** Import resolves by name, and names are not
     unique here: stacks sharing an AWS account carry identically named AppConfig
     Applications. Only a state move preserves physical IDs unambiguously.
+15. **One PR chain per repo, not one PR per phase.** A new platform repo's PR carries the
+    `argocd/` chart and the Pulumi program together; the legacy repo's PR is the matching
+    removal. Everything above `dev` is then a promotion of that same chain.
 
 ## Environment traps
 
@@ -446,38 +449,46 @@ it moves unchanged.
 Widen to admit both the canonical and the suffixed namespace for the duration of the
 migration. Phase 10 narrows it back.
 
-### The cross-project reference
+### The attachment to the root-owned policy
 
-`{c}-rds-policy-attachment` binds a role that moves to a policy that stays. Export the policy
-ARN as a legacy stack output and consume it in the new project through a `StackReference`. Do
-not look the policy up by name — Pulumi auto-naming gives it a random suffix.
+`{c}-rds-policy-attachment` binds a role that moves to a policy that stays, so the new project
+needs that policy's ARN. It does not need a `StackReference` to get it. The root component
+gives the policy an explicit `name`, so there is no auto-naming suffix and the ARN is
+derivable from config the new stack already holds:
 
-The legacy stack exports nothing today, so adding that output is itself a legacy change that
-has to be applied and run before the new project can reference it.
+```
+arn:aws:iam::{accountId}:policy/{partOf}-{applicationName}-pg-{stackName}-account-{componentName}
+```
 
-### Order of operations, per stack
+Check the constructed ARN against the live policy before relying on it. This is a naming
+convention rather than a contract, but it fails loudly with `NoSuchEntity` rather than
+silently, and it keeps the legacy change to a pure removal with no stack outputs and no
+ordering dependency between the two repos.
 
-The ordering is not stylistic, and the daily cron means a half-finished move does not wait for
-you to come back to it.
+### One window per stack
 
-1. Back up both stack states under `~/.cache/ali-migration/`. Never into a repo.
-2. Land the legacy stack output for the policy ARN; let its `pulumi up` run.
-3. Land the component code in the new repo on this stack's branch — copied from the legacy
-   `components/{c}/`, with `index.ts` uncommented and the trust policy widened. If `pulumi up`
-   runs before the state arrives it fails with `EntityAlreadyExists`: noisy, harmless.
-4. Move the state. Export both stacks, transplant the component's resources with their
-   physical IDs intact, re-import. The two projects sit on different backend prefixes, so this
-   is an export/import rather than a single `pulumi state move`.
-5. Remove the component's code from the legacy repo on this stack's branch; let its
-   `pulumi up` run. The resources have already left its state, so this is a no-op, not a
-   delete.
-6. `pulumi preview` both stacks. Both must be clean.
+Merging a PR into branch `{stack}` is what runs `pulumi up` for that stack, so the merge and
+the state move are two halves of one operation. Per stack, in order, in one sitting:
 
-Steps 4 and 5 are one window. Between them the legacy program declares resources it no longer
-owns, so if the cron fires it tries to recreate them and fails on the name — the recoverable
-direction. The unrecoverable direction is doing 5 before 4: the legacy stack still owns the
-resources, the program no longer declares them, and `pulumi up` deletes the live roles and the
-AppConfig application out from under a running workload.
+1. Back up all three stack states under `~/.cache/ali-migration/`. Never into a repo.
+2. Move the state. Export the legacy stack and each component stack, transplant the
+   component-owned resources with their physical IDs intact, re-import. The projects sit on
+   different backend prefixes, so this is an export/import rather than a single
+   `pulumi state move`.
+3. Merge the legacy PR into branch `{stack}`. Its `pulumi up` is a no-op: the program no
+   longer declares those resources and the state no longer holds them.
+4. Merge each component PR into branch `{stack}`. Its `pulumi up` adopts the moved state.
+5. `pulumi preview` all three stacks.
+
+Steps 2 to 4 are one window and must not be left open overnight. Between 2 and 4 the component
+stack holds state with no program on that branch, and a `pulumi up` there — from the 11:00 UTC
+cron, or from any push to that branch — deletes the live roles and the AppConfig application
+out from under a running workload. Do not open a window close to 11:00 UTC.
+
+Doing 3 before 2 is the same catastrophe from the other side: the legacy stack still owns the
+resources, the program no longer declares them, and its `pulumi up` deletes them. The only
+recoverable mis-ordering is delaying 3, which leaves the legacy program declaring resources it
+no longer owns — that fails with `EntityAlreadyExists` and changes nothing.
 
 ### What "no changes" means here
 
@@ -619,7 +630,10 @@ Delete the shadow namespace if it lingers. Update the log. Then start the next s
 
 ## Phase 10 — Decommission
 
-Once every stack of every component has cut over and baked:
+**Out of scope by default.** When the last stack has cut over and baked, the migration is
+done. Decommissioning is a separate change raised as its own PR once someone has watched the
+migrated shape run in production. Do not fold any of it into the migration PRs. What it
+covers:
 
 - Delete `argocd/projects/{partOf}/{app}/templates/app-set-{c}.yaml` for each migrated
   component, and remove the now-unused `{stack}.{c}` tag keys from that project's `values.yaml`.
@@ -633,10 +647,12 @@ Once every stack of every component has cut over and baked:
   suffixed namespace remains. Leaving it widened leaves a namespace that anyone can create
   able to assume the workload's role.
 - Confirm `argocd/root/` and `components/root/` are untouched, and that the only remaining
-  legacy Pulumi changes are the component removals and the stack outputs Phase 5 added.
-- Post a summary comment on the Jira issue listing every defect found and fixed, and every
-  application-level issue that was found but deliberately not fixed. Transition the issue to
-  Done.
+  legacy Pulumi change is the component removal.
+
+The migration's own Jira issue closes when the last stack has baked, not when decommissioning
+happens. Post a summary comment listing every defect found and fixed and every application
+level issue found but deliberately not fixed, transition the issue to Done, and raise a
+follow-up issue for the decommission.
 
 ## Rollback
 
