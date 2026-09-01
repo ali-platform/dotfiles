@@ -219,10 +219,10 @@ if [[ -d "$APPS_DIR" ]]; then
   else
     fail "argocd/applications/$PART_OF/templates/gateway.yaml is missing: the $PART_OF-gateway Application is never created, so the gateway is not deployed even though platform-$PART_OF-gateway exists. That is a prerequisite owned by another effort."
   fi
-  if grep -q 'nameSuffix' "$APPS_DIR/templates/_application.tpl" 2>/dev/null; then
-    pass "_application.tpl already supports nameSuffix"
+  if grep -q 'preserveResourcesOnDeletion' "$APPS_DIR/../../projects/$PART_OF/$APP_NAME/templates/"app-set-*.yaml 2>/dev/null; then
+    pass "legacy ApplicationSets already set preserveResourcesOnDeletion"
   else
-    warn "_application.tpl has no nameSuffix parameter yet; Phase 4 adds it"
+    warn "legacy ApplicationSets do not set preserveResourcesOnDeletion yet; Phase 4 adds it"
   fi
 else
   fail "argocd/applications/$PART_OF does not exist in $K8S_APPS"
@@ -357,7 +357,7 @@ else
     if [[ -f "$legacy_values" ]]; then
       host="$(cat "$legacy_values" | yq -r '.hostName // ""')"
       [[ -n "$host" && "$host" != "null" ]] \
-        && pass "[$s] legacy host $host (carry this into values.$s.yaml at Phase 8)" \
+        && pass "[$s] legacy host $host (must keep serving after the Phase 6 switch)" \
         || warn "[$s] argocd/root/values-$s.yaml has no hostName"
     else
       warn "[$s] no argocd/root/values-$s.yaml: this stack has no legacy hostname or ALB and can only route via the shared gateway"

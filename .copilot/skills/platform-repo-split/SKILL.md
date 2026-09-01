@@ -1,6 +1,6 @@
 ---
 name: platform-repo-split
-description: Migrate one application from the legacy shared platform repo (ArgoCD resources split between container repo and platform repo, deployed tags held in platform-k8s-apps) to per-component platform repos with a single flat argocd/ chart and a local version.{stack}.yaml, per ADR-010. Runs entirely inside a multi-root workspace that already contains the legacy platform repo, the new per-component platform repos, the container repos and platform-k8s-apps. Use when the user says "migrate {app} to per-component platform repos", "ADR-010 migration", "split the platform repo", "move {app} off platform-k8s-apps tags", or "run the platform repo split for {app}". Cuts over with zero downtime by standing up a shadow Application in a suffixed namespace, validating it live, and only then retiring the legacy Application. Moves the component's Pulumi resources into the new project by state surgery, so ownership changes without creating or destroying any AWS resource. Fixes configuration, Pulumi and Kubernetes defects found on the way; never touches application source code.
+description: Migrate one application from the legacy shared platform repo (ArgoCD resources split between container repo and platform repo, deployed tags held in platform-k8s-apps) to per-component platform repos with a single flat argocd/ chart and a local version.{stack}.yaml, per ADR-010. Runs entirely inside a multi-root workspace that already contains the legacy platform repo, the new per-component platform repos, the container repos and platform-k8s-apps. Use when the user says "migrate {app} to per-component platform repos", "ADR-010 migration", "split the platform repo", "move {app} off platform-k8s-apps tags", or "run the platform repo split for {app}". Cuts over with zero downtime by making the new chart render exactly what is already running, then swapping the ArgoCD Application over so the live workload is adopted rather than replaced. Moves the component's Pulumi resources into the new project by state surgery, so ownership changes without creating or destroying any AWS resource. Fixes configuration, Pulumi and Kubernetes defects found on the way; never touches application source code.
 ---
 
 # Platform repo split (ADR-010)
@@ -113,7 +113,7 @@ Out of scope, and must not be attempted:
 | ArgoCD `targetRevision` | a git tag on the container repo, held in `platform-k8s-apps` | the platform repo's **stack branch** |
 | Deployed image | derived from that git tag | `version.{stack}.yaml` → `tag:`, a **container image tag** |
 | Image ref in template | `{{ .Values.{c}.tag }}` | `{{ .Values.tag }}` |
-| Autoscaling | `hpa.yaml` | `scaled-object.yaml` (KEDA) |
+| Autoscaling | `hpa.yaml` in the container repo | `hpa.yaml`, carried across unchanged |
 | ArgoCD wiring | `argocd/projects/{partOf}/{app}/templates/app-set-{c}.yaml` | `argocd/applications/{partOf}/templates/{app}-{c}.yaml` |
 | Pulumi ownership | one stack per application, every component in `platform-{partOf}-{app}` | one stack per component, in `platform-{partOf}-{app}-{c}`; shared resources stay behind |
 
@@ -169,12 +169,14 @@ migration.
   `platform-{partOf}-{app}-{c}` per component, one `container-{partOf}-{app}-{c}` per
   component, and `platform-k8s-apps`. A missing repo means a partial migration.
 - **Clean working trees.** Uncommitted work will be mixed into generated diffs and lost.
-- **Shared gateway reachable — per stack.** The target is always `Gateway/{partOf}-gateway` in
-  namespace `{partOf}-gateway-{stack}`, from the `platform-{partOf}-gateway` repo, wired by
-  `argocd/applications/{partOf}/templates/gateway.yaml` in `platform-k8s-apps`. It must exist
-  on the stack's cluster, its listeners must accept the new hostname, and its `allowedRoutes`
-  selector must admit the component namespace's labels. Without this the new route silently
-  fails to attach and the shadow proves nothing.
+- **The application's current gateway — per stack.** Read it from the live `HTTPRoute`, not
+  from the scaffold. The workload stays on whatever gateway serves it today, which is usually
+  `Gateway/{app}` in `{partOf}-{app}-root-{stack}`, owned by the legacy root chart. The shared
+  `Gateway/{partOf}-gateway` in `{partOf}-gateway-{stack}` is where applications end up
+  *eventually*, but moving there is a separate change with its own certificate and DNS work.
+  If that move is ever in scope, the shared gateway's listeners must accept the new hostname
+  and its `allowedRoutes` selector must admit the component namespace's labels, or the route
+  silently fails to attach.
 
 **Do not infer the target gateway from what other applications currently do.** Applications
 that migrated early are sometimes parked on another `partOf`'s gateway as a temporary measure
@@ -245,13 +247,14 @@ From `platform-{partOf}-{app}/argocd/{c}/`:
 - `templates/parameters/*` → `templates/{c}/` (only present for some components)
 - `values.yaml` → merged into `argocd/values.yaml`
 
-Mechanical conversions, all of which are expected diffs:
+Mechanical conversions, and this is the entire list:
 
 - `values-{stack}.yaml` → `values.{stack}.yaml`
-- `{{ .Values.{c}.tag }}` → `{{ .Values.tag }}`
-- `hpa.yaml` → `scaled-object.yaml`, mapping `minReplicas`/`maxReplicas` and the CPU target
-  onto the `scaledObject` block the generated chart already carries
-- fill the `values.{stack}.yaml` files, which the generator leaves **empty**
+- `{{ .Values.{c}.tag }}` → `{{ .Values.tag }}`, fed from `version.{stack}.yaml`
+
+**The generated chart's own opinions are not the target.** It is a generic scaffold, and every
+place it differs from the old chart is a change you would be shipping under cover of a
+migration. Where they disagree, the old chart wins.
 
 Merge values with `yq ea` and pipe, never by filename:
 
@@ -259,67 +262,78 @@ Merge values with `yq ea` and pipe, never by filename:
 cat a.yaml b.yaml | yq ea '. as $i ireduce ({}; . * $i)' -
 ```
 
-Then gate:
+### The gate: byte-parity with the old chart, tag excluded
+
+The new chart must render **byte-identical** to the old chart in every stack, with the
+container image tag and the `app.kubernetes.io/version` label as the only permitted
+differences. That is the entire contract of this migration: ownership moves, tag resolution
+moves, nothing else changes.
+
+**The old chart lives in two repositories.** Rendering only the container half silently omits
+whatever the legacy platform repo contributed — typically the istio policies and the
+parameter-store resources — and the diff then looks clean while the workload would lose half
+its objects. Concatenate both renders before comparing:
 
 ```bash
-scripts/render-diff.py --application-name <app> --component <c> --stack <stack>
+helm template x container-{partOf}-{app}-{c}/argocd/{c} \
+  -f .../values.yaml -f .../values-{stack}.yaml --set stackName={stack} >  old.yaml
+helm template x platform-{partOf}-{app}/argocd/{c} \
+  -f .../values.yaml --set stackName={stack}                            >> old.yaml
 ```
 
-Differences under `spec.template` or in routing are **blocking** — they mean the workload
-would change. Everything else is reported for review. Resolve every blocking difference before
-committing.
+Compare resource by resource keyed on `(kind, metadata.name)`, never as a text diff — a
+renamed resource is a delete plus a create, and a text diff buries that as a pair of unrelated
+hunks. **Fail loudly if `helm template` errors.** Redirecting stderr into the render file turns
+a template failure into an unparseable document, and a comparison that swallows it will report
+"no differences" for a chart that does not render at all.
 
-Expect the gate to surface at least these, because the generated chart cannot know about them:
+Known scaffold deviations, all of which are reverted:
 
-- `ExternalSecret` and `SecretStore` from the legacy repo's `templates/parameters/` — carry
-  them forward or the pod loses its configuration
+| Scaffold emits | Old chart has | Why it matters |
+|---|---|---|
+| `ScaledObject` (KEDA) | `HorizontalPodAutoscaler` | a different controller takes over replicas |
+| `allow-gateway-to-service` with `principals:` | `allow-gateway` with `namespaces:` | the rename is a delete plus a create, and the match mechanism differs |
+| shared `{partOf}-gateway` plus `hostnames:` | the app's own gateway in `{partOf}-{app}-root-{stack}`, no `hostnames` | detaches the workload from the gateway actually serving it |
+| no `metadata.namespace` on istio objects | explicit `metadata.namespace` | cosmetic under ArgoCD, still a diff |
+| `.Values.scaledObject.*` guards | `.Values.hpa.*` | left dangling when the HPA is restored, and renders nil |
+
+The last one bites twice: the same guard also wraps `topologySpreadConstraints` in
+`deployment.yaml`, far away from the autoscaler template, so restoring the HPA without fixing
+it there fails the render.
+
+Once the old chart is reproduced, the per-stack values files usually have **nothing left in
+them** — every name derives from `partOf`, `applicationName`, `componentName` and `stackName`.
+An empty `values.{stack}.yaml` is the correct outcome, not a sign that something was missed.
+
+Also expect to carry forward, because the scaffold cannot know about them:
+
+- `ExternalSecret` and `SecretStore` from the legacy repo's `templates/parameters/` — without
+  them the pod loses its configuration
 - environment blocks the container chart injected from its own values, typically the
-  `FEATURE_FLAGS_*` group — the generated deployment has no equivalent
-- `HTTPRoute` — the generator emits no routing at all
-- `AuthorizationPolicy/allow-gateway` replaced by `allow-gateway-to-service` — compare the two
-  rather than assuming the rename is equivalent
-- resource requests and probe settings that do not match the live workload
-- `HorizontalPodAutoscaler` against `ScaledObject`, which is the one difference that is
-  expected and correct
+  `FEATURE_FLAGS_*` group
+- `HTTPRoute` — the scaffold emits routing, but not the routing this application uses
+
+Some live objects belong to neither chart. If the old render does not produce them and the
+namespace has them anyway — an image-pull `ExternalSecret`, an injected ConfigMap — they are
+provisioned elsewhere and are not yours to reproduce.
 
 ### 2b. Fix forward
 
 Commit 2, separate and clearly labelled, so the neutrality proof from commit 1 stays readable.
 
-**Routing must be values-driven.** The generator emits no routing at all, and hardcoding it
-breaks both the shadow and any repo with a custom production hostname. Render `parentRefs`
-from `.Values.gateways[]` and `hostnames` from `.Values.hostNames[]`:
+**Routing is reproduced, not redesigned.** Whatever gateway the application is on today is the
+gateway it stays on. Read the parent from the old chart's `httproute.yaml` — typically the
+Gateway named after the application, in `{partOf}-{app}-root-{stack}` — and carry the path
+match across unchanged. Do not add `hostnames` the old chart did not set: an absent
+`hostnames` matches every host the gateway serves, and replacing it with a list silently drops
+every name not on that list.
 
-```yaml
-gateways:
-  - name: "{partOf}-gateway"
-    namespace: "{partOf}-gateway-{stack}"
-    serviceAccount: "{partOf}-gateway-istio"
-hostNames:
-  - "{stack}.{app}.one.ali-apps.com"
-```
-
-The service account is Istio's, named after the **Gateway resource**, so it is
-`{gatewayName}-istio`.
-
-The legacy gateway and the legacy hostname are **deliberately absent** during the shadow phase
-and are appended in Phase 8. The legacy hostname is whatever
-`platform-{partOf}-{app}/argocd/root/values-{stack}.yaml` sets as `hostName`; some stacks have
-no such file, and some production stacks use a custom hostname that does not follow the
-pattern. Read it, do not derive it.
-
-**The istio authorization policy must match the gateway list.** The generated
-`templates/istio/allow-gateway-to-service.yaml` is wrong out of the box: it assumes the gateway
-lives in `{partOf}-{app}-{stack}` with service account `{partOf}-{app}-istio`. Istio names the
-gateway's service account after the **Gateway resource**, and the legacy gateway lives in the
-root Application's namespace. Emit one principal per `.Values.gateways[]` entry:
-
-```
-cluster.local/ns/{{ .namespace }}/sa/{{ .serviceAccount }}
-```
-
-and set `ports` to the **container port**. ztunnel enforces on the container port; a mismatch
-returns 503 with no useful error anywhere.
+**The istio authorization policy must match.** Whichever form the old chart used — a
+`namespaces:` source naming the root namespace, or `principals:` naming the gateway's service
+account — is the form to keep. Istio names a gateway's service account after the **Gateway
+resource**, so it is `{gatewayName}-istio`, not `{partOf}-{app}-istio`. Set `ports` to the
+**container port**: ztunnel enforces on the container port, and a mismatch returns 503 with no
+useful error anywhere.
 
 **Seed `version.{stack}.yaml`** from the live image tag captured in Phase 1. The generator
 leaves `tag: 0.0.0`, which resolves to nothing.
@@ -377,7 +391,7 @@ Independent of Phase 2; can run in parallel.
 
 5. Open the PR. **Leave `argocd/{c}/` in place.** It is dead code from the moment the platform
    repo owns the chart, but deleting it here would remove the legacy baseline while the
-   migration still depends on it. Deletion is a Phase 10 step.
+   migration still depends on it. Deletion is a Phase 8 step.
 
    Two things still need that folder. The render diff gates every Phase 2 commit against the
    legacy chart, and stays useful for re-verification right up to cutover. More importantly,
@@ -390,29 +404,20 @@ Independent of Phase 2; can run in parallel.
 
 ## Phase 4 — `platform-k8s-apps`: prepare
 
-One PR, no effect on any running workload. Verify that by rendering before and after.
-
-**Add an optional `nameSuffix` to `argocd/applications/{partOf}/templates/_application.tpl`.**
-The template derives the Application name, the destination namespace *and the repo URL* from a
-single `$fullName`. The suffix must apply to `metadata.name` and `destination.namespace` only —
-applying it to the repo URL would point at a repository that does not exist.
-
-Default it to the empty string and prove the change is inert:
-
-```bash
-helm template argocd/applications/{partOf} > after.yaml   # for every partOf, not just yours
-```
-
-must be byte-identical to the same render before the change.
+One PR, no effect on any running workload.
 
 **Set `preserveResourcesOnDeletion: true`** on the legacy component ApplicationSets, at
 `spec.syncPolicy` on the ApplicationSet itself — not inside `spec.template.spec.syncPolicy`,
 which is the Application's own sync policy and does something else entirely. This is what makes
-Phase 8 safe.
+Phase 6 safe: it lets the legacy Application be removed while its workload keeps running, so
+the new Application can adopt the objects instead of recreating them.
+
+Prove the change is inert by rendering `argocd/applications/{partOf}` before and after. The
+only difference should be the added sync policy.
 
 ## Phase 5 — Move the component's Pulumi resources
 
-Per stack, immediately before that stack's shadow. The goal is a change of ownership with no
+Per stack, before that stack's ArgoCD switch. The goal is a change of ownership with no
 change in AWS: the same roles, the same AppConfig application, the same physical IDs, managed
 by a different Pulumi project.
 
@@ -431,23 +436,20 @@ Anything `components/root/` creates stays, **even when its name carries the comp
 `postgresql-policy-{c}` is a root resource parameterised by account; the attachment binding it
 to the component's role is not.
 
-### The naming collision is the normal case, not the exception
+### The identical names are the point
 
 The scaffolded `components/roles.ts` in the new repo derives its names from `partOf`,
 `applicationName` and `componentName` exactly as the legacy code does, so it generates role
-names identical to the ones already deployed. There is no name left to create a parallel role
-under. Do not try; move the existing roles and widen the trust policy instead.
+names, namespaces and service accounts byte-identical to the ones already deployed. That is
+precisely what makes the move invisible: the workload stays in the same namespace under the
+same service account, so the existing OIDC trust policy keeps working untouched. Do not create
+parallel roles, and do not edit any trust policy.
 
-Only `k8s-app-*` needs widening. Its trust policy is an OIDC condition on
-`system:serviceaccount:{namespace}:{serviceAccount}`, and the shadow deliberately runs in a
-different namespace from the workload it shadows. Without the widening the shadow's pods
-cannot assume their role, and Phase 7 reports failures that are artefacts of your own
-sequencing rather than findings about the migration. `eso-*` is assumed by the cluster's
-`k8s-external-secrets` role and scoped by SSM parameter path — no namespace appears in it, so
-it moves unchanged.
-
-Widen to admit both the canonical and the suffixed namespace for the duration of the
-migration. Phase 10 narrows it back.
+The trust policy only becomes a problem in a variant of this migration that moves the workload
+to a different namespace, because `k8s-app-*` is an OIDC condition on
+`system:serviceaccount:{namespace}:{serviceAccount}`. `eso-*` would still be fine even then:
+it is assumed by the cluster's `k8s-external-secrets` role and scoped by SSM parameter path,
+with no namespace in it.
 
 ### The attachment to the root-owned policy
 
@@ -497,18 +499,84 @@ no longer owns — that fails with `EntityAlreadyExists` and changes nothing.
 ownership. Tag-only updates are accepted; record the decision in the log. Anything else — any
 create, delete or replace — means the move was wrong. Stop and restore from step 1.
 
-## Phase 6 — `platform-k8s-apps`: shadow
+## Phase 6 — Switch ArgoCD to the new repos
 
-### Register the new hostname with the gateway first
+One `platform-k8s-apps` PR per stack. It removes that stack from the legacy component
+ApplicationSet's gate and adds the new-style Application, in the same commit. The two cannot
+coexist: both render `metadata.name` and `destination.namespace` as
+`{partOf}-{app}-{c}-{stack}`, which is also why there is no shadow and no parallel run in this
+migration. There is no name left to run one under.
+
+Because Phase 4 set `preserveResourcesOnDeletion`, the workload survives the legacy
+Application's removal and is adopted by the new Application through `ServerSideApply`. If the
+render is neutral, nothing restarts.
+
+```yaml
+{{- include "ali.application" (dict
+  "root" .
+  "applicationName" "{app}"
+  "componentName" "{c}"
+) -}}
+```
+
+One stack at a time, `dev` first. For `prod`, open the PR and leave it open per rule 11.
+
+### The render must be neutral against *live*, not against the legacy chart
+
+This is the gate that decides whether the switch is safe, and it is **not** the same check as
+the Phase 2a render diff. That one compares the new chart to the legacy chart. This one
+compares the new chart to the objects actually running:
+
+```bash
+kubectl -n {partOf}-{app}-{c}-{stack} get httproute,authorizationpolicy,deployment -o yaml
+```
+
+The workload objects — Deployment, Service, ServiceAccount, ScaledObject, PDB — normally match
+already. The two that routinely do not are the edge objects, because the new scaffold assumes
+the shared gateway while the legacy application is often still fronted by its own:
+
+- `HTTPRoute` — `parentRefs` and `hostnames`. A workload attached to its own gateway in
+  `{partOf}-{app}-root-{stack}` with `hostnames: null` gets **detached from the gateway that
+  is actually serving it** the moment the new values point somewhere else. The route still
+  reports `Accepted=True` against the new parent, so nothing looks wrong.
+- `AuthorizationPolicy` — its principals derive from the same `gateways` list, so a wrong
+  gateway there denies exactly the traffic a wrong `parentRef` was still admitting.
+
+Set `values.{stack}.yaml` to reproduce what is live. Note also that the legacy chart may name
+the policy something else (`allow-gateway` vs `allow-gateway-to-service`); the old object is
+left behind by `preserveResourcesOnDeletion` and belongs on the decommission list.
+
+### The version tag is the one thing that must be right
+
+`version.{stack}.yaml` decides what image the new Application deploys. If it disagrees with
+what is running, the switch stops being neutral: ArgoCD rolls the workload to a different
+version at the moment of handover, which is a deployment disguised as a migration.
+
+Take the value from the **running image**, never from the tag the legacy Application declares.
+The two diverge in practice — a stack pinned to git tag `v0.0.7` can be running image `0.0.5`,
+because the chart at that git tag set a different image tag. Re-check it immediately before
+the switch, not just when the file was seeded.
+
+### Skip a component only if it has no live workload
+
+Decide from the cluster, never from the declared tag. `v0.0.0` is a real, resolvable git tag: a
+component pinned to it in every stack is usually deployed and Healthy, running an image tagged
+`0.0.0`. The test is whether the Phase 1 snapshot found a Deployment and running pods.
+
+### Moving to the shared gateway is a separate change
+
+Out of scope by default. It changes the hostname, and a hostname needs a certificate and a DNS
+record before anything can reach it — bundling that into the switch turns a neutral ownership
+change into a routing migration. What follows is for when that change is made on its own.
 
 The shared gateway's chart derives its TLS certificate `dnsNames` — and the DNS record and ALB
 listener behind it — from its own `hostNames` list. A gateway listener with no `hostname:` will
 happily *accept* a route for `{stack}.{app}.one.ali-apps.com`, so the route reports
 `Accepted=True` and everything looks correct, while the name has no certificate and does not
-resolve. The shadow then proves nothing.
+resolve.
 
-So before shadowing a stack, raise a PR against `platform-{partOf}-gateway` adding the new
-hostname to `argocd/values.{stack}.yaml`:
+So first raise a PR against `platform-{partOf}-gateway` adding the new hostname to
+`argocd/values.{stack}.yaml`:
 
 ```yaml
 gateways:
@@ -520,115 +588,44 @@ gateways:
 Note this file uses `gatewayName`, not `name`. This is the one sanctioned change to the
 gateway repo; it is additive registration, not configuration of someone else's gateway. Wait
 for it to sync and for the name to resolve — `preflight.sh` warns `does not resolve in DNS
-yet` until it does — before trusting any shadow result.
+yet` until it does.
 
-**Register the legacy hostname there too.** At cutover the new gateway serves the legacy
-hostname as well, and it needs a certificate for it. The listener has no `hostname:` so it
-will accept the legacy host regardless, and the route will report `Accepted=True`, but TLS
-will fail. Register both names up front:
+Only once the name resolves does it make sense to point the application's `HTTPRoute` at the
+shared gateway. Register the legacy hostname there too and serve both for a while, so DNS can
+move without a break; the listener has no `hostname:` so it will accept the legacy host
+regardless, and the route will report `Accepted=True`, but TLS fails without a certificate:
 
 ```yaml
       - "{stack}.{app}.one.ali-apps.com"
       - "<hostName from the legacy root values file>"
 ```
 
-Add a shadow Application per component per stack, gated to one stack at a time:
+The legacy hostname is whatever `platform-{partOf}-{app}/argocd/root/values-{stack}.yaml` sets
+as `hostName`. Some stacks have no such file at all, and some production stacks use a custom
+name that does not follow the pattern. Read it, do not derive it.
 
-```yaml
-{{- include "ali-platform.application" (dict
-  "root" .
-  "applicationName" "{app}"
-  "componentName" "{c}"
-  "nameSuffix" "-next"
-) -}}
-```
+## Phase 7 — Verify and bake
 
-That produces Application and namespace `{partOf}-{app}-{c}-next-{stack}`, sourced from the
-correct `platform-{partOf}-{app}-{c}` repo on its stack branch, containing resources still
-named `{app}-{c}` on their normal ports and paths. The legacy Application is untouched.
+Against the Phase 1 snapshot, for the stack just switched:
 
-**Skip Phases 4 through 6 only for a component with no live workload.** Decide this from the
-cluster, never from the declared tag. `v0.0.0` is a real, resolvable git tag: a component
-pinned to it in every stack is usually deployed and Healthy, running an image tagged `0.0.0`.
-Treating that as "never deployed" would take a live workload straight to canonical with no
-shadow and no baseline — the exact downtime this skill exists to avoid. The test is whether
-the Phase 1 snapshot found a Deployment and running pods.
-
-## Phase 7 — Validate the shadow
-
-Against the Phase 1 snapshot, for the stack being migrated:
-
-- The shadow Application is Synced and Healthy.
-- The running image tag equals `version.{stack}.yaml`.
-- The `HTTPRoute` reports `Accepted=True` and `ResolvedRefs=True`, with the shared gateway as
-  the resolved parent.
-- The new hostname returns the expected response, served by pods in the shadow namespace.
-- The shadow's pods can assume their IAM role. A pod that cannot reach AWS after Phase 5
-  widened the trust policy means the widening did not take — not that the chart is wrong.
-- **The legacy namespace is unchanged**: same ReplicaSet, same pod names, same restart counts,
-  same Service ClusterIP as the snapshot. Any change here means the shadow is interfering and
-  must be rolled back immediately.
-- The legacy hostname still serves traffic.
-
-Let it bake. Do not proceed on the strength of a green sync alone.
-
-## Phase 8 — Cut over
-
-Two changes, in this order, in one window per stack.
-
-First, on the platform repo's stack branch, append the legacy gateway and the legacy hostname
-to `values.{stack}.yaml`, so the canonical Application will serve both hostnames:
-
-```yaml
-gateways:
-  - name: "{partOf}-gateway"
-    namespace: "{partOf}-gateway-{stack}"
-    serviceAccount: "{partOf}-gateway-istio"
-  - name: "{app}"
-    namespace: "{partOf}-{app}-root-{stack}"
-    serviceAccount: "{app}-istio"
-hostNames:
-  - "{stack}.{app}.one.ali-apps.com"
-  - "<hostName from the legacy root values file>"
-```
-
-Serving both hostnames from both gateways is the whole point of the cutover: it is what lets
-DNS move without a break. This dual-host, dual-gateway shape is exactly what the already
-migrated applications run in production today.
-
-Then one atomic `platform-k8s-apps` PR that does all three of:
-
-- removes this stack from the legacy component ApplicationSet's stack gate,
-- removes the shadow Application,
-- adds the canonical Application (no `nameSuffix`).
-
-All three must land together. The canonical Application has the same name and the same
-destination namespace as the legacy one, so they cannot coexist; and leaving the shadow up
-alongside the canonical would put two routes with the same hostname and path on the same
-gateway.
-
-Because Phase 4 set `preserveResourcesOnDeletion`, the workload in the canonical namespace
-survives the legacy Application's removal and is adopted by the canonical Application through
-`ServerSideApply`. If the render is neutral, no pod restarts.
-
-**For `prod`, both of these are prepared as pull requests and left open.** Do not merge the
-platform repo PR, do not merge the `platform-k8s-apps` PR, and do not move DNS. Because the
-two must land together in one window, sequencing them is the reviewer's call, not this
-skill's. Record both PR links in the migration log and the Jira issue, state plainly that
-production is not cut over, and stop.
-
-## Phase 9 — Verify and bake
-
-- No new ReplicaSet in the canonical namespace: `kubectl get rs -n {ns}` matches the snapshot.
-- The canonical Application is Synced and Healthy.
-- Both hostnames serve.
+- **No new ReplicaSet**: `kubectl get rs -n {ns}` matches the snapshot. A new one means the
+  render was not neutral after all.
+- Same pod names and restart counts. Same Service ClusterIP.
+- The new Application is Synced and Healthy.
+- The hostname still serves, on the same path.
 - The root Application is still Synced.
+- The workload's pods can still assume their IAM role.
 - `update-tag.yaml` round-trips: a container publish writes the new tag into
   `version.{stack}.yaml` and ArgoCD deploys it.
 
-Delete the shadow namespace if it lingers. Update the log. Then start the next stack.
+Let it bake. Do not proceed to the next stack on the strength of a green sync alone. Update the
+log, then start the next stack.
 
-## Phase 10 — Decommission
+**For `prod`, the switch is prepared as a pull request and left open.** Do not merge the
+`platform-k8s-apps` PR and do not move DNS. Record the PR link in the migration log and the
+Jira issue, state plainly that production is not cut over, and stop.
+
+## Phase 8 — Decommission
 
 **Out of scope by default.** When the last stack has cut over and baked, the migration is
 done. Decommissioning is a separate change raised as its own PR once someone has watched the
@@ -643,9 +640,9 @@ covers:
   needs a fix. Any defect recorded against that folder earlier in the migration is resolved by
   the deletion rather than by a patch.
 - Merge the container repo PRs if they are still open.
-- Narrow each `k8s-app-*` trust policy back to the canonical namespace alone, now that no
-  suffixed namespace remains. Leaving it widened leaves a namespace that anyone can create
-  able to assume the workload's role.
+- Delete the objects the old chart owned under a different name that
+  `preserveResourcesOnDeletion` left orphaned in the namespace — in practice none, if Phase 2
+  achieved byte-parity, but check rather than assume.
 - Confirm `argocd/root/` and `components/root/` are untouched, and that the only remaining
   legacy Pulumi change is the component removal.
 
@@ -656,14 +653,15 @@ follow-up issue for the decommission.
 
 ## Rollback
 
-Per stack, at any point before Phase 8 the migration is free: delete the shadow Application and
-nothing else has changed.
+Per stack, at any point before Phase 6 the migration is free: nothing in Kubernetes has
+changed yet. The new repos are populated but unreferenced, and the Pulumi move is invisible to
+the cluster.
 
-After Phase 8, revert the `platform-k8s-apps` PR. The legacy ApplicationSet is restored and
+After Phase 6, revert the `platform-k8s-apps` PR. The legacy ApplicationSet is restored and
 adopts the preserved resources back. The platform repo and container repo changes are inert
 without the k8s-apps wiring, so they can stay.
 
-The dangerous window is Phase 8 itself. Do not start it without the Phase 1 snapshot in hand
+The dangerous window is Phase 6 itself. Do not start it without the Phase 1 snapshot in hand
 and `preserveResourcesOnDeletion` already merged and synced.
 
 A Pulumi move rolls back by the same route it went forward: restore the two stack states from
