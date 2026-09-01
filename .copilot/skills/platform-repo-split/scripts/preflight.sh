@@ -357,11 +357,30 @@ else
     if [[ -f "$legacy_values" ]]; then
       host="$(cat "$legacy_values" | yq -r '.hostName // ""')"
       [[ -n "$host" && "$host" != "null" ]] \
-        && pass "[$s] legacy host $host (carry this into values.$s.yaml at Phase 7)" \
+        && pass "[$s] legacy host $host (carry this into values.$s.yaml at Phase 8)" \
         || warn "[$s] argocd/root/values-$s.yaml has no hostName"
     else
       warn "[$s] no argocd/root/values-$s.yaml: this stack has no legacy hostname or ALB and can only route via the shared gateway"
     fi
+  done
+
+  section "Pulumi stacks"
+  # Phase 5 moves resources from the legacy stack into the per-component stack. Both
+  # ends must exist, or there is nothing to move from / into.
+  for s in "${STACKS[@]}"; do
+    if [[ -f "${REPO_PATH[$LEGACY_REPO]}/Pulumi.$s.yaml" ]]; then
+      pass "[$s] legacy Pulumi.$s.yaml exists"
+    else
+      fail "[$s] legacy repo has no Pulumi.$s.yaml. The workload runs but no legacy Pulumi stack owns its IAM roles. Resolve who owns them before migrating this stack."
+    fi
+    for c in "${COMPONENTS[@]}"; do
+      new_repo="$LEGACY_REPO-$c"
+      if [[ -n "${REPO_PATH[$new_repo]:-}" && -f "${REPO_PATH[$new_repo]}/Pulumi.$s.yaml" ]]; then
+        pass "[$s] $new_repo has Pulumi.$s.yaml"
+      else
+        warn "[$s] $new_repo has no Pulumi.$s.yaml; Phase 5 has nowhere to move $c's resources"
+      fi
+    done
   done
 fi
 

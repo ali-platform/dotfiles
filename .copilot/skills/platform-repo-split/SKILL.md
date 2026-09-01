@@ -1,6 +1,6 @@
 ---
 name: platform-repo-split
-description: Migrate one application from the legacy shared platform repo (ArgoCD resources split between container repo and platform repo, deployed tags held in platform-k8s-apps) to per-component platform repos with a single flat argocd/ chart and a local version.{stack}.yaml, per ADR-010. Runs entirely inside a multi-root workspace that already contains the legacy platform repo, the new per-component platform repos, the container repos and platform-k8s-apps. Use when the user says "migrate {app} to per-component platform repos", "ADR-010 migration", "split the platform repo", "move {app} off platform-k8s-apps tags", or "run the platform repo split for {app}". Cuts over with zero downtime by standing up a shadow Application in a suffixed namespace, validating it live, and only then retiring the legacy Application. Fixes configuration, Pulumi and Kubernetes defects found on the way; never touches application source code.
+description: Migrate one application from the legacy shared platform repo (ArgoCD resources split between container repo and platform repo, deployed tags held in platform-k8s-apps) to per-component platform repos with a single flat argocd/ chart and a local version.{stack}.yaml, per ADR-010. Runs entirely inside a multi-root workspace that already contains the legacy platform repo, the new per-component platform repos, the container repos and platform-k8s-apps. Use when the user says "migrate {app} to per-component platform repos", "ADR-010 migration", "split the platform repo", "move {app} off platform-k8s-apps tags", or "run the platform repo split for {app}". Cuts over with zero downtime by standing up a shadow Application in a suffixed namespace, validating it live, and only then retiring the legacy Application. Moves the component's Pulumi resources into the new project by state surgery, so ownership changes without creating or destroying any AWS resource. Fixes configuration, Pulumi and Kubernetes defects found on the way; never touches application source code.
 ---
 
 # Platform repo split (ADR-010)
@@ -15,7 +15,8 @@ those only when something here is ambiguous.
 
 ## Scope
 
-In scope: seeding the new platform repos, updating the container repos, cutting over in
+In scope: seeding the new platform repos, updating the container repos, moving the component's
+Pulumi resources out of the legacy project into the new one, cutting over in
 `platform-k8s-apps`, verifying, and retiring the legacy component charts.
 
 Out of scope, and must not be attempted:
@@ -26,15 +27,20 @@ Out of scope, and must not be attempted:
   its own effort. This skill only *references* whichever gateway a stack actually uses — which
   may belong to another `partOf` — and gates on it. Never edit it.
 - Archiving the legacy platform repo. It survives as the root/shared repo.
-- Any Pulumi state move.
+- Everything `components/root/` creates: the RDS cluster with its instances and its
+  parameter, subnet and security groups; the `postgresql-*` SSM parameters and IAM policies;
+  the account-sync role; the ACM certificate and its Route53 records. Those are shared across
+  components and stay in the legacy Pulumi project permanently.
 - Any change to application source code.
 
 ## Non-negotiable rules
 
 1. **Never read `.ali/projectInfo.json`.** It is deprecated and frozen at repo creation. All
    discovery comes from `argocd/values.yaml`, `platform-k8s-apps` values, and git remote names.
-2. **The legacy platform repo is writable only under `docs/migration/**`.** Assert that
-   `argocd/`, `components/` and `Pulumi.*` are unchanged at the end of every phase.
+2. **The legacy platform repo is writable under `docs/migration/**`, `components/{c}/`,
+   `components/index.ts`, `index.ts` and `Pulumi.*.yaml`** — the last four only to hand the
+   component's Pulumi resources over in Phase 5. `argocd/` and `components/root/` are never
+   touched. Assert that at the end of every phase.
 3. **Never edit `stacks[]`** in `platform-k8s-apps/argocd/projects/{partOf}/{app}/values.yaml`.
    It also drives `app-set-root.yaml` and the AppProject. Gate on a separate list instead.
 4. **`preserveResourcesOnDeletion: true` lands in its own earlier PR**, never in the same PR
@@ -59,6 +65,16 @@ Out of scope, and must not be attempted:
     production change is a human decision outside this skill's scope. Leave the PR open, link
     it in the Jira issue and in the migration log, and hand it over explicitly. The same
     applies to any `platform-k8s-apps` PR whose effect is limited to `prod`.
+12. **A Pulumi move must not create or destroy anything in AWS.** Move state; never re-create.
+    `pulumi preview` in both projects must come back with no creates, no deletes and no
+    replaces before the move is called done. The one accepted diff is the `pulumi-repo`
+    default tag, which necessarily changes with the owning repository.
+13. **Never `pulumi destroy`. Never remove code from a project whose state still holds the
+    resources.** A resource in state but absent from the program is a delete on the next
+    `pulumi up`. State always leaves the old stack *before* the code does.
+14. **Move by state, not by `pulumi import`.** Import resolves by name, and names are not
+    unique here: stacks sharing an AWS account carry identically named AppConfig
+    Applications. Only a state move preserves physical IDs unambiguously.
 
 ## Environment traps
 
@@ -77,6 +93,11 @@ Out of scope, and must not be attempted:
   order, one PR per hop: `dev → test → uat → stg → prod`. Never promote out of chain order
   and never open a hop before the previous one has merged and baked. Rule 11 stops the chain
   at the final hop: raise `Promote stg to prod` and leave it open.
+- **`pulumi-up-{stack}.yaml` runs on a daily `0 11 * * *` cron**, in the legacy repo and in
+  every new platform repo, on top of push-to-stack-branch. The cron ignores the
+  `paths-ignore` list that spares `argocd/**`. So a mismatch between Pulumi code and Pulumi
+  state is not a problem that waits for your next push — it has a deadline of the next 11:00
+  UTC. Never leave a state move half-finished overnight.
 - `container-v2-pull-request-checks.yaml` fails with "Nx wrote no status record" when
   `@acceleratelearning/nx-plugin` is older than `^0.5.40`, even though every target passed.
 
@@ -91,6 +112,7 @@ Out of scope, and must not be attempted:
 | Image ref in template | `{{ .Values.{c}.tag }}` | `{{ .Values.tag }}` |
 | Autoscaling | `hpa.yaml` | `scaled-object.yaml` (KEDA) |
 | ArgoCD wiring | `argocd/projects/{partOf}/{app}/templates/app-set-{c}.yaml` | `argocd/applications/{partOf}/templates/{app}-{c}.yaml` |
+| Pulumi ownership | one stack per application, every component in `platform-{partOf}-{app}` | one stack per component, in `platform-{partOf}-{app}-{c}`; shared resources stay behind |
 
 The old and new `tag` values mean **different things**. The legacy value is a git ref; the new
 one is a container image tag. Never copy one into the other. Seed `version.{stack}.yaml` from
@@ -278,7 +300,7 @@ The service account is Istio's, named after the **Gateway resource**, so it is
 `{gatewayName}-istio`.
 
 The legacy gateway and the legacy hostname are **deliberately absent** during the shadow phase
-and are appended in Phase 7. The legacy hostname is whatever
+and are appended in Phase 8. The legacy hostname is whatever
 `platform-{partOf}-{app}/argocd/root/values-{stack}.yaml` sets as `hostName`; some stacks have
 no such file, and some production stacks use a custom hostname that does not follow the
 pattern. Read it, do not derive it.
@@ -310,6 +332,12 @@ Land the work on `dev` first: feature branch off `dev`, PR into `dev`. Then prom
 a time with PRs titled `Promote {from} to {to}`, in order: `dev → test`, `test → uat`,
 `uat → stg`, `stg → prod`. The maintenance workflow will not do this for you. Per rule 11 the
 `Promote stg to prod` PR is opened and left open, never merged.
+
+While the chart is all that has moved these promotions are inert twice over: nothing consumes
+the stack branches until Phase 6, and `pulumi-up-{stack}.yaml` lists `argocd/**` in its
+`paths-ignore`. That stops being true the moment Phase 5 puts Pulumi code in the repo — from
+then on, merging a promotion PR runs `pulumi up` against that stack. Finish the chart-only
+promotions before starting Phase 5.
 
 ## Phase 3 — Container repos
 
@@ -346,7 +374,7 @@ Independent of Phase 2; can run in parallel.
 
 5. Open the PR. **Leave `argocd/{c}/` in place.** It is dead code from the moment the platform
    repo owns the chart, but deleting it here would remove the legacy baseline while the
-   migration still depends on it. Deletion is a Phase 9 step.
+   migration still depends on it. Deletion is a Phase 10 step.
 
    Two things still need that folder. The render diff gates every Phase 2 commit against the
    legacy chart, and stays useful for re-verification right up to cutover. More importantly,
@@ -377,9 +405,88 @@ must be byte-identical to the same render before the change.
 **Set `preserveResourcesOnDeletion: true`** on the legacy component ApplicationSets, at
 `spec.syncPolicy` on the ApplicationSet itself — not inside `spec.template.spec.syncPolicy`,
 which is the Application's own sync policy and does something else entirely. This is what makes
-Phase 7 safe.
+Phase 8 safe.
 
-## Phase 5 — `platform-k8s-apps`: shadow
+## Phase 5 — Move the component's Pulumi resources
+
+Per stack, immediately before that stack's shadow. The goal is a change of ownership with no
+change in AWS: the same roles, the same AppConfig application, the same physical IDs, managed
+by a different Pulumi project.
+
+### What moves and what stays
+
+Read the legacy stack's state and classify every resource in it. For a component `{c}`:
+
+| Moves to `platform-{partOf}-{app}-{c}` | Stays in the legacy project |
+|---|---|
+| `k8s-app-{partOf}-{app}-{c}-{stack}` AssumableRole, its Role and RolePolicy | RDS cluster, instances, parameter/subnet/security groups |
+| `eso-{partOf}-{app}-{c}-{stack}` AssumableRole, its Role and RolePolicy | `postgresql-connection-info*` SSM parameters |
+| the component's AppConfig Application, Environment, ConfigurationProfile, DeploymentStrategy | `postgresql-policy-{c}` IAM policy |
+| `{c}-rds-policy-attachment` RolePolicyAttachment | account-sync role, ACM certificate, Route53 records |
+
+Anything `components/root/` creates stays, **even when its name carries the component's name**.
+`postgresql-policy-{c}` is a root resource parameterised by account; the attachment binding it
+to the component's role is not.
+
+### The naming collision is the normal case, not the exception
+
+The scaffolded `components/roles.ts` in the new repo derives its names from `partOf`,
+`applicationName` and `componentName` exactly as the legacy code does, so it generates role
+names identical to the ones already deployed. There is no name left to create a parallel role
+under. Do not try; move the existing roles and widen the trust policy instead.
+
+Only `k8s-app-*` needs widening. Its trust policy is an OIDC condition on
+`system:serviceaccount:{namespace}:{serviceAccount}`, and the shadow deliberately runs in a
+different namespace from the workload it shadows. Without the widening the shadow's pods
+cannot assume their role, and Phase 7 reports failures that are artefacts of your own
+sequencing rather than findings about the migration. `eso-*` is assumed by the cluster's
+`k8s-external-secrets` role and scoped by SSM parameter path — no namespace appears in it, so
+it moves unchanged.
+
+Widen to admit both the canonical and the suffixed namespace for the duration of the
+migration. Phase 10 narrows it back.
+
+### The cross-project reference
+
+`{c}-rds-policy-attachment` binds a role that moves to a policy that stays. Export the policy
+ARN as a legacy stack output and consume it in the new project through a `StackReference`. Do
+not look the policy up by name — Pulumi auto-naming gives it a random suffix.
+
+The legacy stack exports nothing today, so adding that output is itself a legacy change that
+has to be applied and run before the new project can reference it.
+
+### Order of operations, per stack
+
+The ordering is not stylistic, and the daily cron means a half-finished move does not wait for
+you to come back to it.
+
+1. Back up both stack states under `~/.cache/ali-migration/`. Never into a repo.
+2. Land the legacy stack output for the policy ARN; let its `pulumi up` run.
+3. Land the component code in the new repo on this stack's branch — copied from the legacy
+   `components/{c}/`, with `index.ts` uncommented and the trust policy widened. If `pulumi up`
+   runs before the state arrives it fails with `EntityAlreadyExists`: noisy, harmless.
+4. Move the state. Export both stacks, transplant the component's resources with their
+   physical IDs intact, re-import. The two projects sit on different backend prefixes, so this
+   is an export/import rather than a single `pulumi state move`.
+5. Remove the component's code from the legacy repo on this stack's branch; let its
+   `pulumi up` run. The resources have already left its state, so this is a no-op, not a
+   delete.
+6. `pulumi preview` both stacks. Both must be clean.
+
+Steps 4 and 5 are one window. Between them the legacy program declares resources it no longer
+owns, so if the cron fires it tries to recreate them and fails on the name — the recoverable
+direction. The unrecoverable direction is doing 5 before 4: the legacy stack still owns the
+resources, the program no longer declares them, and `pulumi up` deletes the live roles and the
+AppConfig application out from under a running workload.
+
+### What "no changes" means here
+
+`pulumi preview` shows one difference on every moved resource: `aws:defaultTags` carries a
+`pulumi-repo` tag naming the owning repository, and that value necessarily changes with
+ownership. Tag-only updates are accepted; record the decision in the log. Anything else — any
+create, delete or replace — means the move was wrong. Stop and restore from step 1.
+
+## Phase 6 — `platform-k8s-apps`: shadow
 
 ### Register the new hostname with the gateway first
 
@@ -436,7 +543,7 @@ Treating that as "never deployed" would take a live workload straight to canonic
 shadow and no baseline — the exact downtime this skill exists to avoid. The test is whether
 the Phase 1 snapshot found a Deployment and running pods.
 
-## Phase 6 — Validate the shadow
+## Phase 7 — Validate the shadow
 
 Against the Phase 1 snapshot, for the stack being migrated:
 
@@ -445,6 +552,8 @@ Against the Phase 1 snapshot, for the stack being migrated:
 - The `HTTPRoute` reports `Accepted=True` and `ResolvedRefs=True`, with the shared gateway as
   the resolved parent.
 - The new hostname returns the expected response, served by pods in the shadow namespace.
+- The shadow's pods can assume their IAM role. A pod that cannot reach AWS after Phase 5
+  widened the trust policy means the widening did not take — not that the chart is wrong.
 - **The legacy namespace is unchanged**: same ReplicaSet, same pod names, same restart counts,
   same Service ClusterIP as the snapshot. Any change here means the shadow is interfering and
   must be rolled back immediately.
@@ -452,7 +561,7 @@ Against the Phase 1 snapshot, for the stack being migrated:
 
 Let it bake. Do not proceed on the strength of a green sync alone.
 
-## Phase 7 — Cut over
+## Phase 8 — Cut over
 
 Two changes, in this order, in one window per stack.
 
@@ -497,7 +606,7 @@ two must land together in one window, sequencing them is the reviewer's call, no
 skill's. Record both PR links in the migration log and the Jira issue, state plainly that
 production is not cut over, and stop.
 
-## Phase 8 — Verify and bake
+## Phase 9 — Verify and bake
 
 - No new ReplicaSet in the canonical namespace: `kubectl get rs -n {ns}` matches the snapshot.
 - The canonical Application is Synced and Healthy.
@@ -508,7 +617,7 @@ production is not cut over, and stop.
 
 Delete the shadow namespace if it lingers. Update the log. Then start the next stack.
 
-## Phase 9 — Decommission
+## Phase 10 — Decommission
 
 Once every stack of every component has cut over and baked:
 
@@ -520,19 +629,27 @@ Once every stack of every component has cut over and baked:
   needs a fix. Any defect recorded against that folder earlier in the migration is resolved by
   the deletion rather than by a patch.
 - Merge the container repo PRs if they are still open.
-- Confirm `argocd/root/` and the legacy platform repo are untouched outside `docs/migration/`.
+- Narrow each `k8s-app-*` trust policy back to the canonical namespace alone, now that no
+  suffixed namespace remains. Leaving it widened leaves a namespace that anyone can create
+  able to assume the workload's role.
+- Confirm `argocd/root/` and `components/root/` are untouched, and that the only remaining
+  legacy Pulumi changes are the component removals and the stack outputs Phase 5 added.
 - Post a summary comment on the Jira issue listing every defect found and fixed, and every
   application-level issue that was found but deliberately not fixed. Transition the issue to
   Done.
 
 ## Rollback
 
-Per stack, at any point before Phase 7 the migration is free: delete the shadow Application and
+Per stack, at any point before Phase 8 the migration is free: delete the shadow Application and
 nothing else has changed.
 
-After Phase 7, revert the `platform-k8s-apps` PR. The legacy ApplicationSet is restored and
+After Phase 8, revert the `platform-k8s-apps` PR. The legacy ApplicationSet is restored and
 adopts the preserved resources back. The platform repo and container repo changes are inert
 without the k8s-apps wiring, so they can stay.
 
-The dangerous window is Phase 7 itself. Do not start it without the Phase 1 snapshot in hand
+The dangerous window is Phase 8 itself. Do not start it without the Phase 1 snapshot in hand
 and `preserveResourcesOnDeletion` already merged and synced.
+
+A Pulumi move rolls back by the same route it went forward: restore the two stack states from
+the step 1 backups, then put the code back where the state is. Never reach for `pulumi up` to
+reconcile a half-moved stack — it resolves the mismatch by deleting.
