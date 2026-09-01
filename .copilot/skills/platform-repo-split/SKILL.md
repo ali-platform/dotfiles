@@ -369,6 +369,16 @@ gateway repo; it is additive registration, not configuration of someone else's g
 for it to sync and for the name to resolve — `preflight.sh` warns `does not resolve in DNS
 yet` until it does — before trusting any shadow result.
 
+**Register the legacy hostname there too.** At cutover the new gateway serves the legacy
+hostname as well, and it needs a certificate for it. The listener has no `hostname:` so it
+will accept the legacy host regardless, and the route will report `Accepted=True`, but TLS
+will fail. Register both names up front:
+
+```yaml
+      - "{stack}.{app}.one.ali-apps.com"
+      - "<hostName from the legacy root values file>"
+```
+
 Add a shadow Application per component per stack, gated to one stack at a time:
 
 ```yaml
