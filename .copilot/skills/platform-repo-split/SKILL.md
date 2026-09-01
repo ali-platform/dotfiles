@@ -325,11 +325,18 @@ Independent of Phase 2; can run in parallel.
 
 4. Bump `@acceleratelearning/nx-plugin` to `^0.5.40` or later.
 
-5. Delete `argocd/{c}/` — it is dead once the platform repo owns the chart. Do this in its own
-   commit so it is easy to revert.
+5. Open the PR. **Leave `argocd/{c}/` in place.** It is dead code from the moment the platform
+   repo owns the chart, but deleting it here would remove the legacy baseline while the
+   migration still depends on it. Deletion is a Phase 9 step.
 
-6. Open the PR. Do not merge it until the component's first stack has cut over, so that a
-   rollback does not need a revert.
+   Two things still need that folder. The render diff gates every Phase 2 commit against the
+   legacy chart, and stays useful for re-verification right up to cutover. More importantly,
+   rollback: the legacy Application deploys from a git tag, and tags are immutable, so an
+   ordinary rollback is safe — but a rollback that also needs a *fix* means cutting a new
+   legacy tag, and that is impossible if the chart is gone from the default branch.
+
+   Do not fix defects found in `argocd/{c}/`. Record them in the log and in the Jira issue;
+   the folder is deleted whole at the end, so patching it is churn that has to be reviewed.
 
 ## Phase 4 — `platform-k8s-apps`: prepare
 
@@ -489,6 +496,10 @@ Once every stack of every component has cut over and baked:
 - Delete `argocd/projects/{partOf}/{app}/templates/app-set-{c}.yaml` for each migrated
   component, and remove the now-unused `{stack}.{c}` tag keys from that project's `values.yaml`.
   Leave `app-set-root.yaml`, the AppProject and `stacks[]` alone.
+- Delete `argocd/{c}/` from each container repo, in its own commit. This is the last step that
+  can be taken, because until it happens a legacy tag can still be cut for a rollback that
+  needs a fix. Any defect recorded against that folder earlier in the migration is resolved by
+  the deletion rather than by a patch.
 - Merge the container repo PRs if they are still open.
 - Confirm `argocd/root/` and the legacy platform repo are untouched outside `docs/migration/`.
 - Post a summary comment on the Jira issue listing every defect found and fixed, and every
