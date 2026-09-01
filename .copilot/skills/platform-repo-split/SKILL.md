@@ -344,6 +344,29 @@ Phase 7 safe.
 
 ## Phase 5 — `platform-k8s-apps`: shadow
 
+### Register the new hostname with the gateway first
+
+The shared gateway's chart derives its TLS certificate `dnsNames` — and the DNS record and ALB
+listener behind it — from its own `hostNames` list. A gateway listener with no `hostname:` will
+happily *accept* a route for `{stack}.{app}.one.ali-apps.com`, so the route reports
+`Accepted=True` and everything looks correct, while the name has no certificate and does not
+resolve. The shadow then proves nothing.
+
+So before shadowing a stack, raise a PR against the shared gateway's repo adding the new
+hostname to `argocd/values.{stack}.yaml`:
+
+```yaml
+gateways:
+  - gatewayName: <discovered gateway name>
+    hostNames:
+      - "{stack}.{app}.one.ali-apps.com"
+```
+
+Note this file uses `gatewayName`, not `name`. This is the one sanctioned change to the
+gateway repo; it is additive registration, not configuration of someone else's gateway. Wait
+for it to sync and for the name to resolve — `preflight.sh` warns `does not resolve in DNS
+yet` until it does — before trusting any shadow result.
+
 Add a shadow Application per component per stack, gated to one stack at a time:
 
 ```yaml
