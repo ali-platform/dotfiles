@@ -118,24 +118,29 @@ migration.
   `platform-{partOf}-{app}-{c}` per component, one `container-{partOf}-{app}-{c}` per
   component, and `platform-k8s-apps`. A missing repo means a partial migration.
 - **Clean working trees.** Uncommitted work will be mixed into generated diffs and lost.
-- **Shared gateway reachable — per stack.** The shared gateway is **discovered, never assumed**.
-  Do not expect it to be called `{partOf}-gateway`: a `partOf` frequently routes through a
-  gateway owned by a *different* `partOf`. `preflight.sh` finds it by asking which Gateway the
-  already-migrated namespaces of this `partOf` actually attach to in that stack (2+ distinct
-  namespaces, excluding legacy per-app `*-root-{stack}` gateways). For each stack it must
-  exist, its listeners must accept the new hostname, and its `allowedRoutes` selector must
-  admit the component namespace's labels. Without this the new route silently fails to attach
-  and the shadow proves nothing.
+- **Shared gateway reachable — per stack.** The target is always `Gateway/{partOf}-gateway` in
+  namespace `{partOf}-gateway-{stack}`, from the `platform-{partOf}-gateway` repo, wired by
+  `argocd/applications/{partOf}/templates/gateway.yaml` in `platform-k8s-apps`. It must exist
+  on the stack's cluster, its listeners must accept the new hostname, and its `allowedRoutes`
+  selector must admit the component namespace's labels. Without this the new route silently
+  fails to attach and the shadow proves nothing.
 
-Gateway readiness is **per stack, not per application**. It is normal and expected for the
-early stacks to be ready while the late ones are not, because the shared gateway is rolled
-out stack by stack by another effort. A stack whose gateway does not yet admit this `partOf`
-is simply not migratable yet — migrate the ready stacks and stop at the boundary. Do not
-edit another team's gateway to unblock yourself; raise it and wait.
+**Do not infer the target gateway from what other applications currently do.** Applications
+that migrated early are sometimes parked on another `partOf`'s gateway as a temporary measure
+— `one-platform` apps sitting on `content-gateway`, for example, which that chart supports
+through an explicit `allowedNamespacePartOf` allow-list. Copying that would propagate a
+temporary arrangement instead of completing the migration. `preflight.sh` reports such peers
+as a NOTE; treat it as information about the estate, never as the target.
 
-A missing `argocd/applications/{partOf}/templates/gateway.yaml` in `platform-k8s-apps` means
-only that this `partOf` does not *own* a gateway. That is not a blocker on its own. The live
-cluster check is the authoritative one.
+Gateway readiness is **per stack, not per application**, because the gateway is rolled out
+stack by stack by another effort. A stack whose gateway is not deployed, or whose selector
+does not yet admit this `partOf`, is not migratable yet — migrate the ready stacks and stop at
+the boundary. Do not edit the gateway to unblock yourself; raise it and wait.
+
+If `argocd/applications/{partOf}/templates/gateway.yaml` does not exist, the gateway
+Application is never created and the gateway is not deployed **even though the
+`platform-{partOf}-gateway` repo exists and its Pulumi has run**. The repo existing is not
+evidence that the gateway is deployed. Stop and raise it.
 
 ## Phase 1 — Snapshot
 
@@ -236,18 +241,15 @@ from `.Values.gateways[]` and `hostnames` from `.Values.hostNames[]`:
 
 ```yaml
 gateways:
-  - name: "<discovered gateway name>"
-    namespace: "<discovered gateway namespace>"
-    serviceAccount: "<discovered gateway name>-istio"
+  - name: "{partOf}-gateway"
+    namespace: "{partOf}-gateway-{stack}"
+    serviceAccount: "{partOf}-gateway-istio"
 hostNames:
   - "{stack}.{app}.one.ali-apps.com"
 ```
 
-Take the name and namespace from the `shared gateway is <ns>/<name>` line that `preflight.sh`
-prints for that stack. Do not template them from `{partOf}` — for `one-platform`, for example,
-the live shared gateway is `content-gateway` in `content-gateway-{stack}`, owned by the
-`content` partOf. The service account is Istio's, named after the **Gateway resource**, so it
-is `{gatewayName}-istio`.
+The service account is Istio's, named after the **Gateway resource**, so it is
+`{gatewayName}-istio`.
 
 The legacy gateway and the legacy hostname are **deliberately absent** during the shadow phase
 and are appended in Phase 7. The legacy hostname is whatever
@@ -352,12 +354,12 @@ happily *accept* a route for `{stack}.{app}.one.ali-apps.com`, so the route repo
 `Accepted=True` and everything looks correct, while the name has no certificate and does not
 resolve. The shadow then proves nothing.
 
-So before shadowing a stack, raise a PR against the shared gateway's repo adding the new
+So before shadowing a stack, raise a PR against `platform-{partOf}-gateway` adding the new
 hostname to `argocd/values.{stack}.yaml`:
 
 ```yaml
 gateways:
-  - gatewayName: <discovered gateway name>
+  - gatewayName: {partOf}-gateway
     hostNames:
       - "{stack}.{app}.one.ali-apps.com"
 ```
@@ -412,9 +414,9 @@ to `values.{stack}.yaml`, so the canonical Application will serve both hostnames
 
 ```yaml
 gateways:
-  - name: "<discovered gateway name>"
-    namespace: "<discovered gateway namespace>"
-    serviceAccount: "<discovered gateway name>-istio"
+  - name: "{partOf}-gateway"
+    namespace: "{partOf}-gateway-{stack}"
+    serviceAccount: "{partOf}-gateway-istio"
   - name: "{app}"
     namespace: "{partOf}-{app}-root-{stack}"
     serviceAccount: "{app}-istio"

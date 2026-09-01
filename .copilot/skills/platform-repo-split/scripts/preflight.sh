@@ -214,9 +214,9 @@ if [[ -d "$APPS_DIR" ]]; then
     && pass "_application.tpl present" \
     || fail "_application.tpl missing: the shared Application template is a prerequisite"
   if [[ -f "$APPS_DIR/templates/gateway.yaml" ]]; then
-    pass "partOf '$PART_OF' declares its own shared gateway"
+    pass "shared gateway is wired for partOf '$PART_OF'"
   else
-    note "argocd/applications/$PART_OF/templates/gateway.yaml is absent: partOf '$PART_OF' does not own a gateway. That is not necessarily a problem - it may share a gateway owned by another partOf. The live check below is authoritative."
+    fail "argocd/applications/$PART_OF/templates/gateway.yaml is missing: the $PART_OF-gateway Application is never created, so the gateway is not deployed even though platform-$PART_OF-gateway exists. That is a prerequisite owned by another effort."
   fi
   if grep -q 'nameSuffix' "$APPS_DIR/templates/_application.tpl" 2>/dev/null; then
     pass "_application.tpl already supports nameSuffix"
@@ -233,11 +233,12 @@ if [[ $SKIP_CLUSTER -eq 1 ]]; then
 else
   section "Shared gateway"
 
-  # The shared gateway is NOT assumed to be named {partOf}-gateway. It is
-  # discovered from the cluster: the gateway that the greatest number of
-  # DISTINCT already-migrated namespaces in this partOf/stack attach to.
-  # Requiring >=2 distinct route namespaces excludes per-app legacy root
-  # gateways, which are only ever referenced by their own application.
+  # The target gateway is ALWAYS {partOf}-gateway in {partOf}-gateway-{stack},
+  # from the platform-{partOf}-gateway repo. Do not infer the target from what
+  # peers currently do: applications that migrated early may be parked on
+  # another partOf's gateway as a temporary measure, and copying that would
+  # propagate the temporary arrangement instead of completing the migration.
+  # discover_gateway is therefore only a cross-check, never the authority.
   discover_gateway() {
     local ctx="$1" s="$2"
     kubectl --context "$ctx" get httproute -A -o json 2>/dev/null | jq -r --arg st "$s" --arg po "$PART_OF" '
@@ -305,20 +306,20 @@ else
     if [[ -n "$GATEWAY_REF" ]]; then
       gw_ref="${GATEWAY_REF//\{stack\}/$s}"
     else
-      gw_ref="$(discover_gateway "$ctx" "$s")"
+      gw_ref="$PART_OF-gateway-$s/$PART_OF-gateway"
     fi
 
-    if [[ -z "$gw_ref" ]]; then
-      fail "[$s] no shared gateway found: no Gateway in a '*-$s' namespace is attached to by 2+ distinct namespaces. Nothing has been migrated in this stack yet, so the shared gateway is still a prerequisite."
-      continue
+    peer_ref="$(discover_gateway "$ctx" "$s")"
+    if [[ -n "$peer_ref" && "$peer_ref" != "$gw_ref" ]]; then
+      note "[$s] migrated peers currently attach to $peer_ref, not the target $gw_ref. That is transitional; migrate to the target, not to what peers happen to use."
     fi
 
     gw_ns="${gw_ref%%/*}"; gw_name="${gw_ref##*/}"
     if ! gw_json="$(kubectl --context "$ctx" -n "$gw_ns" get gateway "$gw_name" -o json 2>/dev/null)"; then
-      fail "[$s] Gateway/$gw_name not found in namespace $gw_ns on $ctx"
+      fail "[$s] Gateway/$gw_name not found in namespace $gw_ns on $ctx: the shared gateway is not deployed for this stack, which is a prerequisite owned by another effort."
       continue
     fi
-    pass "[$s] shared gateway is $gw_ref"
+    pass "[$s] target gateway $gw_ref is deployed"
 
     matched=0
     while IFS= read -r listener_host; do
