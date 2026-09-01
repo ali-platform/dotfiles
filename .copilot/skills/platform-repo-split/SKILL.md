@@ -249,7 +249,10 @@ From `platform-{partOf}-{app}/argocd/{c}/`:
 
 Mechanical conversions, and this is the entire list:
 
-- `values-{stack}.yaml` → `values.{stack}.yaml`
+- **`values-{stack}.yaml` → `values.{stack}.yaml`.** Hyphen to dot, every stack, in both the
+  component chart and anything that references it. The new chart resolves per-stack values by
+  the dotted name; a file left as `values-dev.yaml` is simply never loaded, and the render
+  silently falls back to `values.yaml` defaults.
 - `{{ .Values.{c}.tag }}` → `{{ .Values.tag }}`, fed from `version.{stack}.yaml`
 
 **The generated chart's own opinions are not the target.** It is a generic scaffold, and every
@@ -286,6 +289,11 @@ renamed resource is a delete plus a create, and a text diff buries that as a pai
 hunks. **Fail loudly if `helm template` errors.** Redirecting stderr into the render file turns
 a template failure into an unparseable document, and a comparison that swallows it will report
 "no differences" for a chart that does not render at all.
+
+**Every live stack must be diffed.** A stack whose `values-{stack}.yaml` is missing from the
+old chart cannot be rendered, and a stack that cannot be rendered cannot be verified. That is a
+gap in the legacy repo, not a stack to skip: the workload is running, so the values it is
+running on exist somewhere. Restore the file before diffing.
 
 Known scaffold deviations, all of which are reverted:
 
