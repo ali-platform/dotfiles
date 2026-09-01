@@ -119,6 +119,25 @@ migration.
    repo. Append to it at every phase boundary: what was done, what was observed, what was
    decided. It is the record for the next person.
 
+   Give it a **Pull requests** table as its second section, and add every PR to it the moment
+   it is opened — repo, number, base branch, title, link, state. A migration spans six repos
+   and produces a long tail of promotion PRs; without one list nobody can tell what is
+   outstanding, and the prod PRs that are deliberately left open look indistinguishable from
+   ones that were forgotten. Mark those `OPEN — deliberate, do not merge`.
+
+   Whenever the operator asks what has been raised, or at any phase boundary, list the PRs
+   from the live source rather than from memory:
+
+   ```bash
+   gh pr list --search {KEY} --state all \
+     --json number,title,url,baseRefName,state \
+     --template '{{range .}}{{.state}}  #{{.number}}  {{.baseRefName}}  {{.title}}  {{.url}}{{"\n"}}{{end}}'
+   ```
+
+   Run it in each of the six repos; `gh` is scoped to the repo you are standing in. Reconcile
+   the output against the table and correct the table, not the other way round. Repeat the
+   list in the Jira issue at each phase boundary so the ticket alone is enough to hand over.
+
 ### What the preflight gates on, and why
 
 - **All five repo roles present.** Legacy `platform-{partOf}-{app}`, one
