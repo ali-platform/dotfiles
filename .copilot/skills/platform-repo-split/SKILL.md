@@ -394,10 +394,12 @@ That produces Application and namespace `{partOf}-{app}-{c}-next-{stack}`, sourc
 correct `platform-{partOf}-{app}-{c}` repo on its stack branch, containing resources still
 named `{app}-{c}` on their normal ports and paths. The legacy Application is untouched.
 
-**Skip Phases 4 through 6 entirely for any component that has never been deployed.** A
-component whose declared tag is `v0.0.0` in every stack has no workload to protect and no
-baseline to preserve; take it straight to canonical in Phase 7. Check the declared tags in
-`argocd/projects/{partOf}/{app}/values.yaml` before assuming otherwise.
+**Skip Phases 4 through 6 only for a component with no live workload.** Decide this from the
+cluster, never from the declared tag. `v0.0.0` is a real, resolvable git tag: a component
+pinned to it in every stack is usually deployed and Healthy, running an image tagged `0.0.0`.
+Treating that as "never deployed" would take a live workload straight to canonical with no
+shadow and no baseline — the exact downtime this skill exists to avoid. The test is whether
+the Phase 1 snapshot found a Deployment and running pods.
 
 ## Phase 6 — Validate the shadow
 

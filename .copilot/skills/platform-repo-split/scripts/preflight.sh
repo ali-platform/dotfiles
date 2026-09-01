@@ -183,9 +183,10 @@ done < <(cat "$PROJECT_VALUES" | yq -r '.stacks[] | [.stackName, .k8sClusterAcco
 
 pass "stacks: ${STACKS[*]}"
 
-# A component declared as v0.0.0 in every stack has never been deployed: it needs no shadow and
-# no snapshot baseline, and goes straight to canonical.
-NEVER_DEPLOYED=()
+# v0.0.0 is a REAL git tag that deploys a real image, so a component pinned to it is very
+# often live. Never infer "not deployed" from the declared ref; the cluster check below is
+# the only authority. This flag exists purely to say "look closely here".
+LOW_TAG=()
 for c in "${COMPONENTS[@]}"; do
   deployed=0
   for s in "${STACKS[@]}"; do
@@ -193,8 +194,8 @@ for c in "${COMPONENTS[@]}"; do
     [[ "$tag" == "v0.0.0" || "$tag" == "0.0.0" || -z "$tag" || "$tag" == "null" ]] || deployed=1
   done
   if [[ $deployed -eq 0 ]]; then
-    NEVER_DEPLOYED+=("$c")
-    warn "component '$c' is v0.0.0 in every stack: never deployed, skip Phases 4-6 and go straight to canonical"
+    LOW_TAG+=("$c")
+    warn "component '$c' is v0.0.0 in every stack. That does NOT mean it is undeployed - v0.0.0 is a real tag. Confirm against the cluster before skipping any phase for it."
   fi
 done
 
@@ -332,7 +333,6 @@ else
     fi
 
     for c in "${COMPONENTS[@]}"; do
-      [[ " ${NEVER_DEPLOYED[*]:-} " == *" $c "* ]] && continue
       ns_labels="$(jq -nc \
         --arg po "$PART_OF" --arg app "$APP" --arg c "$c" --arg st "$s" \
         '{"app.kubernetes.io/part-of":$po,"app.kubernetes.io/name":$app,"app.kubernetes.io/component":$c,"stack-name":$st,"istio.io/dataplane-mode":"ambient"}')"
@@ -371,7 +371,7 @@ section "Summary"
 printf 'MIGRATION_PART_OF=%q\n' "$PART_OF"
 printf 'MIGRATION_APP=%q\n' "$APP"
 printf 'MIGRATION_COMPONENTS=%q\n' "${COMPONENTS[*]}"
-printf 'MIGRATION_NEVER_DEPLOYED=%q\n' "${NEVER_DEPLOYED[*]:-}"
+printf 'MIGRATION_LOW_TAG=%q\n' "${LOW_TAG[*]:-}"
 printf 'MIGRATION_STACKS=%q\n' "${STACKS[*]}"
 printf 'MIGRATION_SCRATCH=%q\n' "$SCRATCH"
 printf 'MIGRATION_LEGACY_REPO=%q\n' "${REPO_PATH[$LEGACY_REPO]}"
