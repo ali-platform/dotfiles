@@ -23,7 +23,8 @@ Out of scope, and must not be attempted:
 - Catalog changes and repo provisioning. The new platform repos already exist.
 - `argocd/root/` in the legacy platform repo. It stays there. It is not migrated.
 - The gateway. It moves to a separate, already-created `platform-{partOf}-gateway` repo under
-  its own effort. This skill only *references* that gateway and gates on its existence.
+  its own effort. This skill only *references* whichever gateway a stack actually uses — which
+  may belong to another `partOf` — and gates on it. Never edit it.
 - Archiving the legacy platform repo. It survives as the root/shared repo.
 - Any Pulumi state move.
 - Any change to application source code.
@@ -51,6 +52,11 @@ Out of scope, and must not be attempted:
    a commit.
 10. **Baseline health may legitimately be Degraded.** Compare to the recorded snapshot, never
     to "Healthy".
+11. **The `prod` stack is PR-only.** For `prod`, open the pull request and stop. Never merge
+    it, never push to the `prod` branch, and never run a promotion into `prod`. Landing
+    production change is a human decision outside this skill's scope. Leave the PR open, link
+    it in the Jira issue and in the migration log, and hand it over explicitly. The same
+    applies to any `platform-k8s-apps` PR whose effect is limited to `prod`.
 
 ## Environment traps
 
@@ -112,14 +118,24 @@ migration.
   `platform-{partOf}-{app}-{c}` per component, one `container-{partOf}-{app}-{c}` per
   component, and `platform-k8s-apps`. A missing repo means a partial migration.
 - **Clean working trees.** Uncommitted work will be mixed into generated diffs and lost.
-- **Shared gateway reachable.** `Gateway/{partOf}-gateway` must exist in namespace
-  `{partOf}-gateway-{stack}` on the stack's cluster, its `allowedRoutes` must admit the
-  component namespace, and its listeners must accept the new hostname. Without this the new
-  route silently fails to attach and the shadow proves nothing.
+- **Shared gateway reachable — per stack.** The shared gateway is **discovered, never assumed**.
+  Do not expect it to be called `{partOf}-gateway`: a `partOf` frequently routes through a
+  gateway owned by a *different* `partOf`. `preflight.sh` finds it by asking which Gateway the
+  already-migrated namespaces of this `partOf` actually attach to in that stack (2+ distinct
+  namespaces, excluding legacy per-app `*-root-{stack}` gateways). For each stack it must
+  exist, its listeners must accept the new hostname, and its `allowedRoutes` selector must
+  admit the component namespace's labels. Without this the new route silently fails to attach
+  and the shadow proves nothing.
 
-If `argocd/applications/{partOf}/templates/gateway.yaml` does not exist in
-`platform-k8s-apps`, the shared gateway is not deployed for this `partOf` at all. Stop and
-raise it; it is a prerequisite owned by another effort.
+Gateway readiness is **per stack, not per application**. It is normal and expected for the
+early stacks to be ready while the late ones are not, because the shared gateway is rolled
+out stack by stack by another effort. A stack whose gateway does not yet admit this `partOf`
+is simply not migratable yet — migrate the ready stacks and stop at the boundary. Do not
+edit another team's gateway to unblock yourself; raise it and wait.
+
+A missing `argocd/applications/{partOf}/templates/gateway.yaml` in `platform-k8s-apps` means
+only that this `partOf` does not *own* a gateway. That is not a blocker on its own. The live
+cluster check is the authoritative one.
 
 ## Phase 1 — Snapshot
 
@@ -220,12 +236,18 @@ from `.Values.gateways[]` and `hostnames` from `.Values.hostNames[]`:
 
 ```yaml
 gateways:
-  - name: "{partOf}-gateway"
-    namespace: "{partOf}-gateway-{stack}"
-    serviceAccount: "{partOf}-gateway-istio"
+  - name: "<discovered gateway name>"
+    namespace: "<discovered gateway namespace>"
+    serviceAccount: "<discovered gateway name>-istio"
 hostNames:
   - "{stack}.{app}.one.ali-apps.com"
 ```
+
+Take the name and namespace from the `shared gateway is <ns>/<name>` line that `preflight.sh`
+prints for that stack. Do not template them from `{partOf}` — for `one-platform`, for example,
+the live shared gateway is `content-gateway` in `content-gateway-{stack}`, owned by the
+`content` partOf. The service account is Istio's, named after the **Gateway resource**, so it
+is `{gatewayName}-istio`.
 
 The legacy gateway and the legacy hostname are **deliberately absent** during the shadow phase
 and are appended in Phase 7. The legacy hostname is whatever
@@ -367,9 +389,9 @@ to `values.{stack}.yaml`, so the canonical Application will serve both hostnames
 
 ```yaml
 gateways:
-  - name: "{partOf}-gateway"
-    namespace: "{partOf}-gateway-{stack}"
-    serviceAccount: "{partOf}-gateway-istio"
+  - name: "<discovered gateway name>"
+    namespace: "<discovered gateway namespace>"
+    serviceAccount: "<discovered gateway name>-istio"
   - name: "{app}"
     namespace: "{partOf}-{app}-root-{stack}"
     serviceAccount: "{app}-istio"
@@ -377,6 +399,10 @@ hostNames:
   - "{stack}.{app}.one.ali-apps.com"
   - "<hostName from the legacy root values file>"
 ```
+
+Serving both hostnames from both gateways is the whole point of the cutover: it is what lets
+DNS move without a break. This dual-host, dual-gateway shape is exactly what the already
+migrated applications run in production today.
 
 Then one atomic `platform-k8s-apps` PR that does all three of:
 
@@ -392,6 +418,12 @@ gateway.
 Because Phase 4 set `preserveResourcesOnDeletion`, the workload in the canonical namespace
 survives the legacy Application's removal and is adopted by the canonical Application through
 `ServerSideApply`. If the render is neutral, no pod restarts.
+
+**For `prod`, both of these are prepared as pull requests and left open.** Do not merge the
+platform repo PR, do not merge the `platform-k8s-apps` PR, and do not move DNS. Because the
+two must land together in one window, sequencing them is the reviewer's call, not this
+skill's. Record both PR links in the migration log and the Jira issue, state plainly that
+production is not cut over, and stop.
 
 ## Phase 8 — Verify and bake
 

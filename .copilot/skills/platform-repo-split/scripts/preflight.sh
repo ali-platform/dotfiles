@@ -6,14 +6,16 @@ APP=""
 PART_OF=""
 SEARCH_ROOTS=()
 SKIP_CLUSTER=0
+GATEWAY_REF=""
 HOST_SUFFIX="one.ali-apps.com"
 
 FAILURES=0
 WARNINGS=0
 
-readonly C_RESET=$'\033[0m' C_RED=$'\033[31m' C_GREEN=$'\033[32m' C_YELLOW=$'\033[33m' C_BOLD=$'\033[1m'
+readonly C_RESET=$'\033[0m' C_RED=$'\033[31m' C_GREEN=$'\033[32m' C_YELLOW=$'\033[33m' C_BLUE=$'\033[34m' C_BOLD=$'\033[1m'
 
 pass() { printf '  %sPASS%s  %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+note() { printf '  %sNOTE%s  %s\n' "$C_BLUE" "$C_RESET" "$*"; }
 warn() { printf '  %sWARN%s  %s\n' "$C_YELLOW" "$C_RESET" "$*"; WARNINGS=$((WARNINGS + 1)); }
 fail() { printf '  %sFAIL%s  %s\n' "$C_RED" "$C_RESET" "$*"; FAILURES=$((FAILURES + 1)); }
 section() { printf '\n%s%s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
@@ -27,6 +29,8 @@ Options:
   --part-of <partOf>         Skip discovery of partOf and use this value.
   --search-root <dir>        Where to look for repos. Repeatable. Default: $HOME/src.
   --host-suffix <suffix>     New hostname suffix. Default: one.ali-apps.com.
+  --gateway <ns>/<name>      Shared gateway to check against; '{stack}' is
+                             substituted. Default: discovered from the cluster.
   --skip-cluster             Skip every kubectl check (offline use only).
   -h, --help                 This message.
 
@@ -43,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --part-of) PART_OF="$2"; shift 2 ;;
     --search-root) SEARCH_ROOTS+=("$2"); shift 2 ;;
     --host-suffix) HOST_SUFFIX="$2"; shift 2 ;;
+    --gateway) GATEWAY_REF="$2"; shift 2 ;;
     --skip-cluster) SKIP_CLUSTER=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown argument: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -209,9 +214,9 @@ if [[ -d "$APPS_DIR" ]]; then
     && pass "_application.tpl present" \
     || fail "_application.tpl missing: the shared Application template is a prerequisite"
   if [[ -f "$APPS_DIR/templates/gateway.yaml" ]]; then
-    pass "shared gateway is wired for partOf '$PART_OF'"
+    pass "partOf '$PART_OF' declares its own shared gateway"
   else
-    fail "argocd/applications/$PART_OF/templates/gateway.yaml is missing: the shared $PART_OF-gateway is not deployed. That is a prerequisite owned by another effort."
+    note "argocd/applications/$PART_OF/templates/gateway.yaml is absent: partOf '$PART_OF' does not own a gateway. That is not necessarily a problem - it may share a gateway owned by another partOf. The live check below is authoritative."
   fi
   if grep -q 'nameSuffix' "$APPS_DIR/templates/_application.tpl" 2>/dev/null; then
     pass "_application.tpl already supports nameSuffix"
@@ -228,6 +233,57 @@ if [[ $SKIP_CLUSTER -eq 1 ]]; then
 else
   section "Shared gateway"
 
+  # The shared gateway is NOT assumed to be named {partOf}-gateway. It is
+  # discovered from the cluster: the gateway that the greatest number of
+  # DISTINCT already-migrated namespaces in this partOf/stack attach to.
+  # Requiring >=2 distinct route namespaces excludes per-app legacy root
+  # gateways, which are only ever referenced by their own application.
+  discover_gateway() {
+    local ctx="$1" s="$2"
+    kubectl --context "$ctx" get httproute -A -o json 2>/dev/null | jq -r --arg st "$s" --arg po "$PART_OF" '
+      [ .items[] as $r
+        | select($r.metadata.namespace | startswith($po + "-"))
+        | select($r.metadata.namespace | endswith("-" + $st))
+        | ( $r.spec.parentRefs[]?
+            | select(.namespace != null)
+            | select(.namespace != $r.metadata.namespace)
+            | select(.namespace | test("-root-" + $st + "$") | not)
+            | {gw: "\(.namespace)/\(.name)", ns: $r.metadata.namespace} ) ]
+      | group_by(.gw)
+      | map({gw: .[0].gw, n: ([.[].ns] | unique | length)})
+      | map(select(.n >= 2))
+      | sort_by(-.n)
+      | .[0].gw // empty'
+  }
+
+  # Evaluate a Gateway allowedRoutes namespaceSelector against the exact label
+  # set the new Application will stamp on its namespace. A selector that does
+  # not match is the single most common reason a migrated route silently never
+  # attaches, so this is a FAIL, not a warning.
+  selector_admits() {
+    local gw_json="$1" labels="$2"
+    printf '%s' "$gw_json" | jq -e --argjson l "$labels" '
+      def admits($labels):
+        if . == null then true
+        else
+          (((.matchLabels // {}) | to_entries) | all(.value == $labels[.key]))
+          and
+          (((.matchExpressions // [])) | all(
+            . as $e | ($labels[$e.key]) as $v |
+            if   $e.operator == "In"           then ($v != null and ($e.values | index($v)) != null)
+            elif $e.operator == "NotIn"        then ($v == null or  ($e.values | index($v)) == null)
+            elif $e.operator == "Exists"       then ($v != null)
+            elif $e.operator == "DoesNotExist" then ($v == null)
+            else false end))
+        end;
+      [ .spec.listeners[]
+        | (.allowedRoutes.namespaces.from // "Same") as $from
+        | if   $from == "All"      then true
+          elif $from == "Selector" then (.allowedRoutes.namespaces.selector | admits($l))
+          else false end ]
+      | any' >/dev/null 2>&1
+  }
+
   host_matches() {
     # $1 listener hostname (may be empty or a leading wildcard), $2 candidate host
     local listener="$1" host="$2"
@@ -239,8 +295,6 @@ else
 
   for s in "${STACKS[@]}"; do
     ctx="${STACK_CLUSTER[$s]}"
-    gw_ns="$PART_OF-gateway-$s"
-    gw_name="$PART_OF-gateway"
     new_host="$s.$APP.$HOST_SUFFIX"
 
     if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx "$ctx"; then
@@ -248,11 +302,23 @@ else
       continue
     fi
 
+    if [[ -n "$GATEWAY_REF" ]]; then
+      gw_ref="${GATEWAY_REF//\{stack\}/$s}"
+    else
+      gw_ref="$(discover_gateway "$ctx" "$s")"
+    fi
+
+    if [[ -z "$gw_ref" ]]; then
+      fail "[$s] no shared gateway found: no Gateway in a '*-$s' namespace is attached to by 2+ distinct namespaces. Nothing has been migrated in this stack yet, so the shared gateway is still a prerequisite."
+      continue
+    fi
+
+    gw_ns="${gw_ref%%/*}"; gw_name="${gw_ref##*/}"
     if ! gw_json="$(kubectl --context "$ctx" -n "$gw_ns" get gateway "$gw_name" -o json 2>/dev/null)"; then
       fail "[$s] Gateway/$gw_name not found in namespace $gw_ns on $ctx"
       continue
     fi
-    pass "[$s] Gateway/$gw_name found in $gw_ns"
+    pass "[$s] shared gateway is $gw_ref"
 
     matched=0
     while IFS= read -r listener_host; do
@@ -264,14 +330,18 @@ else
       fail "[$s] no listener accepts $new_host; the new route would never attach"
     fi
 
-    mode="$(printf '%s' "$gw_json" | jq -r '[.spec.listeners[].allowedRoutes.namespaces.from // "Same"] | unique | join(",")')"
-    case "$mode" in
-      *All*) pass "[$s] allowedRoutes.from=All: any namespace may attach" ;;
-      *Selector*)
-        sel="$(printf '%s' "$gw_json" | jq -c '[.spec.listeners[].allowedRoutes.namespaces.selector] | unique')"
-        warn "[$s] allowedRoutes uses a Selector $sel - confirm it matches the labels the new Application puts on its namespace (part-of, name, component, stack-name)" ;;
-      *) fail "[$s] allowedRoutes.from=$mode: routes from other namespaces cannot attach" ;;
-    esac
+    for c in "${COMPONENTS[@]}"; do
+      [[ " ${NEVER_DEPLOYED[*]:-} " == *" $c "* ]] && continue
+      ns_labels="$(jq -nc \
+        --arg po "$PART_OF" --arg app "$APP" --arg c "$c" --arg st "$s" \
+        '{"app.kubernetes.io/part-of":$po,"app.kubernetes.io/name":$app,"app.kubernetes.io/component":$c,"stack-name":$st,"istio.io/dataplane-mode":"ambient"}')"
+      if selector_admits "$gw_json" "$ns_labels"; then
+        pass "[$s] $gw_ref admits namespace $PART_OF-$APP-$c-$s"
+      else
+        sel="$(printf '%s' "$gw_json" | jq -c '[.spec.listeners[] | {from:(.allowedRoutes.namespaces.from // "Same"), selector:.allowedRoutes.namespaces.selector}]')"
+        fail "[$s] $gw_ref will NOT admit namespace $PART_OF-$APP-$c-$s. allowedRoutes=$sel. The gateway owner must widen this before stack '$s' can be migrated."
+      fi
+    done
 
     if ! getent hosts "$new_host" >/dev/null 2>&1; then
       warn "[$s] $new_host does not resolve in DNS yet"
