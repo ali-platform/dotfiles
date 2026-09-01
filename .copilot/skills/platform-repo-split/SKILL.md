@@ -45,7 +45,9 @@ Out of scope, and must not be attempted:
 6. **Green workflow does not mean the effect happened.** Verify the artefact: the file on the
    branch, the tag in the chart, the pod in the cluster.
 7. **No force-push. No direct pushes to protected branches.** Changes land through PRs whose
-   titles carry the Jira key.
+   titles carry the Jira key. This includes `dev`: the new platform repos are branch-per-env
+   with `dev` as the default branch, so all new work starts on a `{JIRA-KEY}-*` feature branch
+   cut from `dev` and merges into `dev` by PR. `dev` is not a scratch branch.
 8. **Never `pulumi stack export --show-secrets`.** Never commit a state backup.
 9. **Fix-forward is limited to** `argocd/**`, `components/**`, `Pulumi.*.yaml` and
    `.github/workflows/**`. Anything wrong in `apps/**` or `src/**` becomes a Jira comment, not
@@ -70,6 +72,11 @@ Out of scope, and must not be attempted:
   `nx.json` exists and still exits 0**, so its "merge default branch into stack branches" step
   never runs. Propagate between stack branches with explicit PRs titled
   `Promote {from} to {to}`.
+- **Branching model for the new platform repos.** Branch-per-env, `dev` is the default
+  branch. New work: feature branch off `dev` → PR into `dev`. Promotion chain, strictly in
+  order, one PR per hop: `dev → test → uat → stg → prod`. Never promote out of chain order
+  and never open a hop before the previous one has merged and baked. Rule 11 stops the chain
+  at the final hop: raise `Promote stg to prod` and leave it open.
 - `container-v2-pull-request-checks.yaml` fails with "Nx wrote no status record" when
   `@acceleratelearning/nx-plugin` is older than `^0.5.40`, even though every target passed.
 
@@ -280,8 +287,10 @@ in a Jira comment instead.
 
 ### 2c. Propagate
 
-Open `Promote {from} to {to}` PRs along the stack chain. The maintenance workflow will not do
-this for you.
+Land the work on `dev` first: feature branch off `dev`, PR into `dev`. Then promote one hop at
+a time with PRs titled `Promote {from} to {to}`, in order: `dev → test`, `test → uat`,
+`uat → stg`, `stg → prod`. The maintenance workflow will not do this for you. Per rule 11 the
+`Promote stg to prod` PR is opened and left open, never merged.
 
 ## Phase 3 — Container repos
 
