@@ -81,6 +81,12 @@ Out of scope, and must not be attempted:
 15. **One PR chain per repo, not one PR per phase.** A new platform repo's PR carries the
     `argocd/` chart and the Pulumi program together; the legacy repo's PR is the matching
     removal. Everything above `dev` is then a promotion of that same chain.
+16. **Always include the URL when asking for action on a pull request.** Any time the user is
+    asked to review, approve, merge, close or look at a PR, give the full
+    `https://github.com/{owner}/{repo}/pull/{n}` link alongside the number. A bare "#3" is
+    ambiguous across five repos that all number their PRs from 1. The same applies in Jira
+    comments and in the migration log. `gh pr list --json number,title,url,baseRefName,state`
+    already returns `url` — use it rather than reconstructing the link by hand.
 
 ## Environment traps
 
