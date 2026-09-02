@@ -67,14 +67,17 @@ Out of scope, and must not be attempted:
     applies to any `platform-k8s-apps` PR whose effect is limited to `prod`.
 12. **A Pulumi move must not create or destroy anything in AWS.** Move state; never re-create.
     `pulumi preview` in both projects must come back with no creates, no deletes and no
-    replaces before the move is called done. The one accepted diff is the `pulumi-repo`
-    default tag, which necessarily changes with the owning repository.
+    replaces before the move is called done. The only accepted diffs are the `pulumi-repo`
+    and `pulumi-project` default tags, which necessarily change with the owning repository.
 13. **Never `pulumi destroy`. Never remove code from a project whose state still holds the
     resources.** A resource in state but absent from the program is a delete on the next
     `pulumi up`. State always leaves the old stack *before* the code does.
-14. **Move by state, not by `pulumi import`.** Import resolves by name, and names are not
-    unique here: stacks sharing an AWS account carry identically named AppConfig
-    Applications. Only a state move preserves physical IDs unambiguously.
+14. **Move by transplanting state, not by `pulumi import`.** Import resolves by name, and
+    names are not unique here: stacks sharing an AWS account carry identically named
+    AppConfig Applications. It also cannot cleanly reconstruct `ali:pulumi:AssumableRole`,
+    which is a component resource with children rather than a cloud resource with an ID.
+    Only moving the existing state entries preserves physical IDs unambiguously. Note this
+    cannot be done with the `pulumi state move` command — see Phase 5.
 15. **One PR chain per repo, not one PR per phase.** A new platform repo's PR carries the
     `argocd/` chart and the Pulumi program together; the legacy repo's PR is the matching
     removal. Everything above `dev` is then a promotion of that same chain.
@@ -495,37 +498,110 @@ convention rather than a contract, but it fails loudly with `NoSuchEntity` rathe
 silently, and it keeps the legacy change to a pure removal with no stack outputs and no
 ordering dependency between the two repos.
 
+### `pulumi state move` does not work here
+
+Each per-component repo has its own DIY backend, a sibling of the legacy one:
+
+```
+s3://ali-pulumi/{org}/platform-{partOf}-{app}?region=us-east-2
+s3://ali-pulumi/{org}/platform-{partOf}-{app}-{c}?region=us-east-2
+```
+
+Each is a self-contained `.pulumi/` root with no common parent, and `--dest` resolves only
+within the current backend. `pulumi stack ls` from the legacy repo cannot even see the
+component stacks. So the move is export, transplant, import — `scripts/build-move.py` does the
+transplant. Do not repoint a component repo's backend at the legacy one to make `state move`
+work; that defeats the split.
+
+### Three things the transplant has to fix
+
+The script handles all three. They are listed because each one fails in a way that invites a
+wrong fix.
+
+**The provider.** An empty destination stack has no provider, so the legacy default `aws`
+provider is carried across with its URN rewritten. Its inputs name the legacy `ghr-*` assume
+role and the legacy repo URL, so they must be retargeted at the destination repo too.
+Otherwise the first `pulumi up` re-registers the default provider with different inputs and
+every moved resource shows a provider diff.
+
+**The secrets envelope.** The import fails with `could not deserialize deployment: cipher:
+message authentication failed`. Each stack seals state with its own data key, and the moved
+ciphertext was sealed with the legacy stack's. Both stacks wrap their key with the *same* KMS
+master key, so carrying the legacy `secrets_providers` block into the artifact is sufficient;
+the next update re-seals with the destination's own key. Verify the two `state.url` values
+match before relying on this.
+
+**Edges that cross the boundary.** `{c}-rds-policy-attachment` records a dependency on
+`postgresql-policy-{c}`, which stays behind. The import refuses with `refers to missing
+resource` and offers `--force`. Do not use `--force` — drop the edge. The destination program
+builds that ARN as a string and genuinely has no dependency on it, so dropping it makes the
+state match the program.
+
 ### One window per stack
 
-Merging a PR into branch `{stack}` is what runs `pulumi up` for that stack, so the merge and
-the state move are two halves of one operation. Per stack, in order, in one sitting:
+Merging a PR into branch `{stack}` is what runs `pulumi up` for that stack, so the merges and
+the state surgery interleave. Split the move into its two halves and merge between them —
+that is what keeps the dangerous window short. Per stack, in order, in one sitting:
 
 1. Back up all three stack states under `~/.cache/ali-migration/`. Never into a repo.
-2. Move the state. Export the legacy stack and each component stack, transplant the
-   component-owned resources with their physical IDs intact, re-import. The projects sit on
-   different backend prefixes, so this is an export/import rather than a single
-   `pulumi state move`.
-3. Merge the legacy PR into branch `{stack}`. Its `pulumi up` is a no-op: the program no
-   longer declares those resources and the state no longer holds them.
-4. Merge each component PR into branch `{stack}`. Its `pulumi up` adopts the moved state.
-5. `pulumi preview` all three stacks.
+2. `pulumi preview` all three and check the arithmetic: the legacy deletes must equal the sum
+   of the component creates, URN for URN. That reconciliation is the gate on the port being
+   complete. Do not proceed if it does not balance.
+3. Import each component's transplanted state, then `pulumi preview` in the component repo on
+   its PR branch. Expect tag-only updates.
 
-Steps 2 to 4 are one window and must not be left open overnight. Between 2 and 4 the component
-stack holds state with no program on that branch, and a `pulumi up` there — from the 11:00 UTC
-cron, or from any push to that branch — deletes the live roles and the AppConfig application
-out from under a running workload. Do not open a window close to 11:00 UTC.
+   ```bash
+   # in the legacy repo
+   pulumi stack export --stack {stack} > ~/.cache/ali-migration/legacy-{stack}.json
+   # in the component repo
+   pulumi stack export --stack {stack} > ~/.cache/ali-migration/{c}-{stack}.json
+   scripts/build-move.py --legacy-project {partOf}-{app} --component {c} --stack {stack} \
+     --legacy ~/.cache/ali-migration/legacy-{stack}.json \
+     --dest   ~/.cache/ali-migration/{c}-{stack}.json \
+     --out    ~/.cache/ali-migration/move/{c}-{stack}.json
+   pulumi stack import --stack {stack} --file ~/.cache/ali-migration/move/{c}-{stack}.json
+   pulumi preview --stack {stack}
+   ```
+4. **Merge each component PR into branch `{stack}`.** Its `pulumi up` applies the tag updates
+   and closes the window opened in 3.
+5. `pulumi state delete --target-dependents --yes {urn}` in the legacy stack, once per
+   top-level component URN. Then `pulumi preview` in the legacy repo on its PR branch, which
+   must be a flat "N unchanged".
+6. **Merge the legacy PR into branch `{stack}`.**
 
-Doing 3 before 2 is the same catastrophe from the other side: the legacy stack still owns the
-resources, the program no longer declares them, and its `pulumi up` deletes them. The only
-recoverable mis-ordering is delaying 3, which leaves the legacy program declaring resources it
-no longer owns — that fails with `EntityAlreadyExists` and changes nothing.
+The window that actually matters is 3 to 4: the component stack holds state while its branch
+still has no program, so a `pulumi up` there — from the 11:00 UTC cron, or any push to that
+branch — deletes the live roles and the AppConfig application out from under a running
+workload. Keep it to minutes and never open it near 11:00 UTC.
+
+Doing 5 or 6 before 3 is the same catastrophe from the other side: the legacy stack still owns
+the resources, its program no longer declares them, and its `pulumi up` deletes them.
+
+The gap between 5 and 6 is the recoverable one, but it is **not** harmless, and the obvious
+reasoning about it is wrong. It leaves the legacy program declaring resources it no longer
+owns, and the tempting conclusion is that every create simply fails `EntityAlreadyExists` and
+nothing happens. Two of them do not fail:
+
+- **AppConfig does not enforce unique DeploymentStrategy names.** The create succeeds and
+  leaves a real duplicate strategy in the account.
+- **`AttachRolePolicy` is idempotent.** The attachment succeeds and enters the legacy state,
+  so the later legacy `pulumi up` detaches it — removing the running pod's RDS access.
+
+So step 5 to 6 is still a window. Close it in the same sitting.
+
+Note that `--target-dependents` takes children and dependents with the parent, so later URNs
+in the list may report that they no longer exist. That is expected, not an error.
 
 ### What "no changes" means here
 
-`pulumi preview` shows one difference on every moved resource: `aws:defaultTags` carries a
-`pulumi-repo` tag naming the owning repository, and that value necessarily changes with
-ownership. Tag-only updates are accepted; record the decision in the log. Anything else — any
-create, delete or replace — means the move was wrong. Stop and restore from step 1.
+Every moved resource that carries tags shows the same difference: `aws:defaultTags` sets
+`pulumi-repo` and `pulumi-project` to the owning repository and project, and both change with
+ownership. Expect the update count to equal the number of *taggable* moved resources — IAM
+roles and AppConfig resources — and not the total, because `RolePolicy` and
+`RolePolicyAttachment` carry no tags.
+
+Tag-only updates are accepted; record the decision in the log. Anything else — any create,
+delete or replace — means the move was wrong. Stop and restore from step 1.
 
 ## Phase 6 — Switch ArgoCD to the new repos
 
