@@ -140,24 +140,44 @@ migration.
 3. Create branch `{KEY}-{short-description}` in every repo the migration will write to: each
    new platform repo, each container repo, `platform-k8s-apps`, and the legacy repo (for the
    log only).
-4. Start the migration log at `docs/migration/{YYYY-MM-DD}-{app}.md` in the **legacy** platform
-   repo. Append to it at every phase boundary: what was done, what was observed, what was
-   decided. It is the record for the next person.
+4. Start the migration log as a **directory** at `docs/migration/{YYYY-MM-DD}-{app}/` in the
+   **legacy** platform repo, with `000-overview.md` holding only the facts that are fixed at
+   the start: the migration variables, the repo roles, the stack list, the Phase 1 snapshot.
 
-   Give it a **Pull requests** table as its second section, and add every PR to it the moment
-   it is opened — repo, number, base branch, title, link, state. A migration spans six repos
-   and produces a long tail of promotion PRs; without one list nobody can tell what is
-   outstanding, and the prod PRs that are deliberately left open look indistinguishable from
-   ones that were forgotten. Mark those `OPEN — deliberate, do not merge`.
+   Every later entry is a **new file**, never an edit to an existing one:
 
-   Whenever the operator asks what has been raised, or at any phase boundary, list the PRs
-   from the live source rather than from memory:
+   ```
+   docs/migration/2026-09-01-reference/
+     000-overview.md
+     010-preflight.md
+     020-snapshot.md
+     030-chart-parity.md
+     040-pulumi-move-dev.md
+   ```
+
+   Number in tens so an entry can be slotted in later without renumbering. One entry per
+   phase boundary or per decision: what was done, what was observed, what was decided.
+
+   **The reason is merge conflicts.** A migration spans six repos, five stacks and a long tail
+   of promotion PRs, many of them open at once against different branches. A single log file
+   is touched by all of them, so every promotion PR conflicts with every other one on that
+   file, and resolving those conflicts by hand is where log content gets silently dropped.
+   Append-only files in a directory never conflict.
+
+   For the same reason, **do not maintain a table of pull requests in the log.** It is the
+   single most conflict-prone thing that could be put there, and it goes stale the moment
+   someone merges without updating it. Each entry records the PRs *it* opened, as a fact about
+   that step. The live list comes from the source of truth on demand:
 
    ```bash
    gh pr list --search {KEY} --state all \
      --json number,title,url,baseRefName,state \
      --template '{{range .}}{{.state}}  #{{.number}}  {{.baseRefName}}  {{.title}}  {{.url}}{{"\n"}}{{end}}'
    ```
+
+   Run that whenever the operator asks what has been raised, and at every phase boundary.
+   Production PRs are deliberately left open, so call those out explicitly each time — an
+   unexplained open prod PR is indistinguishable from one that was forgotten.
 
    Run it in each of the six repos; `gh` is scoped to the repo you are standing in. Reconcile
    the output against the table and correct the table, not the other way round. Repeat the
