@@ -110,6 +110,7 @@ CloneRepos() {
         "github"
         "ss-github"
         "kubernetes"
+        "npm"
         "packer"
         "php-lib"
         "platform"
