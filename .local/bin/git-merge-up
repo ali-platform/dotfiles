@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -e
+
+# Promotion order of the well known branches, lowest to highest
+BRANCH_ORDER=(dev release main test uat prep stg prod)
+
+# Refresh the index so stale stat info is not reported as uncommitted changes
+git status --porcelain >/dev/null 2>&1
+
+git fetch --prune origin >/dev/null
+
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+# Find the position of the current branch in the promotion order
+current_index=-1
+for i in "${!BRANCH_ORDER[@]}"; do
+    if [[ "${BRANCH_ORDER[$i]}" == "$current_branch" ]]; then
+        current_index=$i
+        break
+    fi
+done
+
+if [[ "$current_index" -lt 0 ]]; then
+    echo "Error: Current branch $current_branch is not in the promotion order: ${BRANCH_ORDER[*]}" >&2
+    exit 1
+fi
+
+# Get remote branches
+remote_branches=$(git branch --remotes --list --format='%(refname:short)' | grep '^origin/' | sed 's|^origin/||')
+
+# Collect the branches above the current one that exist on the remote
+branches=()
+for (( i = current_index + 1; i < ${#BRANCH_ORDER[@]}; i++ )); do
+    branch="${BRANCH_ORDER[$i]}"
+    if echo "$remote_branches" | grep -q "^${branch}$"; then
+        branches+=("$branch")
+    fi
+done
+
+if [[ "${#branches[@]}" -eq 0 ]]; then
+    echo -e "\033[0;36mNo branches above $current_branch to merge to\033[0m"
+    exit 0
+fi
+
+branch_list=$(IFS=','; echo "${branches[*]}")
+
+echo -e "\033[0;36mMerging $current_branch up through: $branch_list\033[0m"
+exec git-merge-to "$branch_list"

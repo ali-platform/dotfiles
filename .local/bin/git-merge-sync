@@ -25,6 +25,8 @@ get_current_branch() {
 
 # Function to check if working tree is clean
 is_working_tree_clean() {
+    # refresh the index first so stale stat info is not reported as a change
+    git status --porcelain >/dev/null 2>&1
     git diff-index --quiet HEAD -- 2>/dev/null
 }
 
