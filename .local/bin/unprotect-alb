@@ -21,4 +21,4 @@ fi
 echo "Disabling deletion protection on $name ($arn)"
 aws elbv2 modify-load-balancer-attributes \
   --load-balancer-arn "$arn" \
-  --attributes Key=deletion_protection.enabled,Value=false
+  --attributes Key=deletion_protection.enabled,Value=false | jq .
