@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 || -z "${1:-}" ]]; then
+  echo "Usage: unprotect-alb <alb-name>" >&2
+  exit 1
+fi
+
+name="$1"
+
+arn="$(aws elbv2 describe-load-balancers \
+  --names "$name" \
+  --query 'LoadBalancers[0].LoadBalancerArn' \
+  --output text)"
+
+if [[ -z "$arn" || "$arn" == "None" ]]; then
+  echo "No load balancer named '$name'" >&2
+  exit 1
+fi
+
+echo "Disabling deletion protection on $name ($arn)"
+aws elbv2 modify-load-balancer-attributes \
+  --load-balancer-arn "$arn" \
+  --attributes Key=deletion_protection.enabled,Value=false
