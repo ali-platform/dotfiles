@@ -20,6 +20,7 @@ export AWS_PROFILE=ali-shared
 export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 export ARM_USE_CLI=true
+export AWS_PAGER=""
 #export NX_TUI=false
 
 if [[ -n $PS1 ]]; then
