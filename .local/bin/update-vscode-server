@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -e
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mUpdating VS Code Server for WSL\e[0m"
+
+# Get the commit hash from the Windows VS Code installation via the code CLI
+COMMIT=$(code --version 2>/dev/null | sed -n '2p' | tr -d '\r\n')
+
+if [ -z "$COMMIT" ]; then
+    echo -e "\e[1;31mCould not determine VS Code commit hash.\e[0m"
+    echo "Ensure 'code' is in PATH and VS Code is installed on the Windows host."
+    exit 1
+fi
+
+echo "VS Code commit: ${COMMIT}"
+
+arch=$(dpkg --print-architecture)
+if [ "$arch" = "arm64" ]; then
+    server_arch="arm64"
+else
+    server_arch="x64"
+fi
+
+# Remove all existing server bins to ensure a clean install
+echo "Removing existing VS Code server installations..."
+rm -rf ~/.vscode-server/bin/
+
+# Download the VS Code server matching the Windows VS Code commit
+SERVER_URL="https://update.code.visualstudio.com/commit:${COMMIT}/server-linux-${server_arch}/stable"
+echo "Downloading from: ${SERVER_URL}"
+mkdir -p ~/.vscode-server/bin/${COMMIT}
+curl -fsSL "${SERVER_URL}" -o /tmp/vscode-server.tar.gz
+tar -xzf /tmp/vscode-server.tar.gz -C ~/.vscode-server/bin/${COMMIT} --strip-components=1
+rm -f /tmp/vscode-server.tar.gz
+
+echo ''
+echo -e "\e[1;32m------\e[0m"
+echo -e "\e[1;32mVS Code Server updated successfully (commit: ${COMMIT})\e[0m"
+echo "Reconnect VS Code Remote to use the updated server."
