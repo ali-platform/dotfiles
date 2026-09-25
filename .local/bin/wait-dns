@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 || -z "${1:-}" ]]; then
+  echo "Usage: wait-dns <hostname>" >&2
+  exit 1
+fi
+
+name="$1"
+
+if command -v ipconfig.exe >/dev/null 2>&1; then
+  ipconfig.exe /flushdns >/dev/null
+fi
+
+has_record() {
+  if command -v dig >/dev/null 2>&1; then
+    local out
+    out="$(dig +short "$name" A "$name" AAAA "$name" CNAME 2>/dev/null || true)"
+    [[ -n "${out//[[:space:]]/}" ]]
+    return
+  fi
+
+  # nslookup exits 0 on NXDOMAIN, so look for an answer after the server header.
+  nslookup "$name" 2>&1 | awk '
+    /^Name:/ { in_answer = 1 }
+    in_answer && /^Address/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  '
+}
+
+echo "Waiting for a DNS record for $name"
+until has_record; do
+  echo "No DNS record for $name yet; retrying in 15s"
+  sleep 15
+done
+
+echo "DNS record found for $name"
+if command -v dig >/dev/null 2>&1; then
+  dig +short "$name" A "$name" AAAA "$name" CNAME
+else
+  nslookup "$name"
+fi
+
