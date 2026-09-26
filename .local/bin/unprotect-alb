@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 || -z "${1:-}" ]]; then
-  echo "Usage: unprotect-alb <alb-name>" >&2
+if [[ $# -lt 1 || $# -gt 2 || -z "${1:-}" ]]; then
+  echo "Usage: unprotect-alb <alb-name> [profile]" >&2
   exit 1
 fi
 
 name="$1"
+profile="${2:-}"
 
-arn="$(aws elbv2 describe-load-balancers \
+aws_args=()
+if [[ -n "$profile" ]]; then
+  aws_args+=(--profile "$profile")
+fi
+
+arn="$(aws "${aws_args[@]}" elbv2 describe-load-balancers \
   --names "$name" \
   --query 'LoadBalancers[0].LoadBalancerArn' \
   --output text)"
@@ -19,6 +25,6 @@ if [[ -z "$arn" || "$arn" == "None" ]]; then
 fi
 
 echo "Disabling deletion protection on $name ($arn)"
-aws elbv2 modify-load-balancer-attributes \
+aws "${aws_args[@]}" elbv2 modify-load-balancer-attributes \
   --load-balancer-arn "$arn" \
   --attributes Key=deletion_protection.enabled,Value=false | jq .
