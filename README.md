@@ -22,7 +22,7 @@ rm -f $SSH_AUTH_SOCK
 ( setsid socat UNIX-LISTEN:${SSH_AUTH_SOCK},fork EXEC:"npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork & ) >/dev/null 2>&1
 
 alias dotfiles='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
-git clone --bare "git@github.com:ali-platform/dotfiles.git" $HOME/.cfg
+git clone --bare "https://github.com/ali-platform/dotfiles.git" $HOME/.cfg
 dotfiles config --local status.showUntrackedFiles no
 dotfiles checkout -f main
 

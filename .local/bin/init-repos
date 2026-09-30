@@ -131,7 +131,7 @@ CloneRepos() {
 
     echo "$repos_json" | jq -c '.[]' | while read -r repo; do
         local repo_name=$(echo "$repo" | jq -r '.name')
-        local ssh_url=$(echo "$repo" | jq -r '.sshUrl')
+        local clone_url=$(echo "$repo" | jq -r '.url')
 
         # Find matching subfolder
         local sub_folder=""
@@ -153,11 +153,11 @@ CloneRepos() {
 
         # Clone or update repository
         if [[ ! -d "$path" ]]; then
-            echo -e "\033[0;36mCloning $ssh_url\033[0m" >&2
+            echo -e "\033[0;36mCloning $clone_url\033[0m" >&2
             # Prefer partial clone to keep initial download smaller without losing refs.
-            if ! git clone --filter=blob:none "$ssh_url" "$path"; then
+            if ! git clone --filter=blob:none "$clone_url" "$path"; then
                 echo -e "\033[0;33mPartial clone unsupported, falling back to full clone for $repo_name\033[0m" >&2
-                git clone "$ssh_url" "$path"
+                git clone "$clone_url" "$path"
             fi
         else
             local recloned=false
@@ -167,7 +167,7 @@ CloneRepos() {
                     popd > /dev/null
                     echo -e "\033[0;33mAuto-fix failed for $repo_name, removing and re-cloning\033[0m" >&2
                     rm -rf "$path"
-                    git clone "$ssh_url" "$path"
+                    git clone "$clone_url" "$path"
                     recloned=true
                 else
                     popd > /dev/null
@@ -208,7 +208,7 @@ CloneOrgRepos() {
     echo -e "\033[0;32mProcessing organization: $org\033[0m" >&2
 
     local repos
-    if ! repos=$(gh repo list "$org" --no-archived --json "name,sshUrl" --limit 500); then
+    if ! repos=$(gh repo list "$org" --no-archived --json "name,url" --limit 500); then
         echo -e "\033[0;33mUnable to list repos for $org; skipping\033[0m" >&2
         return
     fi
