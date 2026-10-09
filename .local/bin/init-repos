@@ -236,7 +236,7 @@ fi
 project_items_file=$(mktemp)
 
 # Clone all organization repos
-CloneOrgRepos "AccelerateLearning" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "acceleratelearning" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-back-office" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-data-gov" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-marketing" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
