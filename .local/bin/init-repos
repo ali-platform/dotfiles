@@ -240,6 +240,7 @@ CloneOrgRepos "acceleratelearning" "$REFRESH" "$AUTO_FIX" >> "$project_items_fil
 CloneOrgRepos "ali-back-office" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-data-gov" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-marketing" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
+CloneOrgRepos "ali-one-cms" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-one-platform" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-onramp" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
 CloneOrgRepos "ali-open" "$REFRESH" "$AUTO_FIX" >> "$project_items_file"
