@@ -1,0 +1,100 @@
+#!/usr/bin/env sh
+
+if [ "$#" -eq 0 ]; then
+  printf 'Usage: %s STACK [STACK ...]\n' "$0" >&2
+  exit 1
+fi
+
+if ! command -v pulumi >/dev/null 2>&1; then
+  printf 'Error: pulumi is not installed or is not on PATH.\n' >&2
+  exit 1
+fi
+
+status=0
+stack_states=
+
+for stack do
+  case "$stack" in
+    ''|-*)
+      printf 'Error: invalid stack name: %s\n' "$stack" >&2
+      status=1
+      continue
+      ;;
+  esac
+
+  printf '\nStack %s:\n' "$stack"
+  if contents=$(pulumi stack --stack "$stack" 2>&1); then
+    printf '%s\n' "$contents"
+    stack_states="${stack_states}1"
+  else
+    case "$contents" in
+      *"no stack named "*" found"*|*"stack "*" not found"*)
+        printf 'Stack %s is already missing.\n' "$stack"
+        stack_states="${stack_states}0"
+        ;;
+      *)
+        printf 'Error inspecting stack %s:\n%s\n' "$stack" "$contents" >&2
+        status=1
+        continue
+        ;;
+    esac
+  fi
+
+done
+
+if [ "$status" -ne 0 ]; then
+  printf 'Stack inspection failed; no stacks or files were removed.\n' >&2
+  exit "$status"
+fi
+
+printf '\nDestroy ALL %s requested stacks and delete their workflow and argocd files? [y/N] ' "$#"
+if ! IFS= read -r answer; then
+  printf '\nNo confirmation received; stopping.\n' >&2
+  exit 1
+fi
+case "$answer" in
+  y|Y) ;;
+  *)
+    printf 'Skipping all stacks.\n'
+    exit 0
+    ;;
+esac
+
+for stack do
+  case "$stack_states" in
+    1*) exists=true ;;
+    0*) exists=false ;;
+  esac
+  stack_states="${stack_states#?}"
+
+  if [ "$exists" = true ]; then
+    if ! pulumi destroy --stack "$stack" --yes; then
+      printf 'Error destroying stack %s; keeping its stack and files.\n' "$stack" >&2
+      status=1
+      continue
+    fi
+
+    if ! pulumi stack rm --stack "$stack" --yes; then
+      printf 'Error removing stack %s; keeping its files.\n' "$stack" >&2
+      status=1
+      continue
+    fi
+  fi
+
+  for file in \
+    ".github/workflows/pulumi-up-$stack.yaml" \
+    "argocd/values.$stack.yaml" \
+    "argocd/version.$stack.yaml"
+  do
+    if [ -e "$file" ] || [ -L "$file" ]; then
+      if rm -f -- "$file"; then
+        printf 'Deleted %s.\n' "$file"
+      else
+        printf 'Error deleting %s.\n' "$file" >&2
+        status=1
+      fi
+    fi
+  done
+done
+
+exit "$status"
