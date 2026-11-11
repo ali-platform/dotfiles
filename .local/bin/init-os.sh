@@ -12,6 +12,37 @@ enabled = true
 options = "metadata,umask=0077,fmask=0077"
 EOF
 
+# Enable gradual memory reclaim in the global WSL config on the Windows host
+# https://learn.microsoft.com/en-us/windows/wsl/wsl-config#experimental-settings
+WSLCONFIG="$USERPROFILE/.wslconfig"
+if [ -d "$USERPROFILE" ]
+then
+  [ -f "$WSLCONFIG" ] || touch "$WSLCONFIG"
+  WSLCONFIG_NEW="$(mktemp)"
+  # Keep unrelated lines and preserve CRLF when the file uses it.
+  awk '
+    { line = $0; cr = sub(/\r$/, "", line) ? "\r" : ""; if (cr != "") eol = "\r"; key = tolower(line) }
+    key ~ /^[ \t]*\[/ { in_exp = (key ~ /^[ \t]*\[experimental\][ \t]*$/) }
+    in_exp && key ~ /^[ \t]*automemoryreclaim[ \t]*=/ { next }
+    { print; last = line }
+    in_exp && !done && key ~ /^[ \t]*\[/ { print "autoMemoryReclaim=gradual" cr; done = 1 }
+    END {
+      if (done) exit
+      if (NR && last !~ /^[ \t]*$/) print eol
+      print "[experimental]" eol
+      print "autoMemoryReclaim=gradual" eol
+    }
+  ' "$WSLCONFIG" > "$WSLCONFIG_NEW"
+  if ! cmp -s "$WSLCONFIG_NEW" "$WSLCONFIG"
+  then
+    cat "$WSLCONFIG_NEW" > "$WSLCONFIG"
+    echo "Updated $WSLCONFIG. Run 'wsl --shutdown' from Windows to apply it."
+  fi
+  rm -f "$WSLCONFIG_NEW"
+else
+  echo "USERPROFILE is not a directory. Skipping the .wslconfig update."
+fi
+
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
