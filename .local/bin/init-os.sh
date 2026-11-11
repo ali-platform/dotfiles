@@ -15,6 +15,35 @@ EOF
 
 echo ''
 echo -e "\e[1;36m------\e[0m"
+echo -e "\e[1;36mConfigure WSL memory reclaim\e[0m"
+# When the VM is idle, WSL gives cached Linux memory back to Windows in small steps.
+# .wslconfig belongs to the Windows user and can hold other settings, so change only
+# [experimental] autoMemoryReclaim and keep the rest of the file.
+# https://learn.microsoft.com/en-us/windows/wsl/wsl-config#experimental-settings
+if [ -d "$USERPROFILE" ]; then
+  wslconfig="$USERPROFILE/.wslconfig"
+  wslconfig_tmp=$(mktemp)
+  touch "$wslconfig"
+  awk 'BEGIN { ORS = "\r\n" }
+    { sub(/\r$/, "") }
+    /^[[:space:]]*\[/ { in_experimental = (tolower($0) ~ /^[[:space:]]*\[experimental\][[:space:]]*$/) }
+    in_experimental && tolower($0) ~ /^[[:space:]]*automemoryreclaim[[:space:]]*=/ { next }
+    { print }
+    in_experimental && !done && /^[[:space:]]*\[/ { print "autoMemoryReclaim=gradual"; done = 1 }
+    END { if (!done) { if (NR) print ""; print "[experimental]"; print "autoMemoryReclaim=gradual" } }' \
+    "$wslconfig" > "$wslconfig_tmp"
+  if ! cmp -s "$wslconfig_tmp" "$wslconfig"; then
+    cat "$wslconfig_tmp" > "$wslconfig"
+    echo "Updated $wslconfig. Run 'wsl --shutdown' from Windows to apply it."
+  fi
+  rm -f "$wslconfig_tmp"
+else
+  echo "Did not change .wslconfig because USERPROFILE is not set to a directory."
+fi
+
+
+echo ''
+echo -e "\e[1;36m------\e[0m"
 echo -e "\e[1;36mUpdate apt\e[0m"
 sudo DEBIAN_FRONTEND=noninteractive apt-get -yq update
 
