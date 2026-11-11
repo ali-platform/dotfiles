@@ -41,3 +41,15 @@ source ~/.bash_profile
 ~/.local/bin/init-repos
 
 ```
+
+## Troubleshooting
+
+### VS Code Remote - WSL: "Update Server" fails
+
+If the VS Code **Update Server** prompt fails when connecting to a remote WSL session, run the following command inside your WSL terminal to manually download and install the correct server version:
+
+```
+update-vscode-server
+```
+
+This script reads the commit hash from your Windows VS Code installation, removes any stale server binaries, and downloads the matching server tarball directly from Microsoft. Once complete, reconnect VS Code to WSL and the updated server will be used automatically.
