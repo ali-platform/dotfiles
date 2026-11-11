@@ -30,6 +30,17 @@ dotfiles checkout -f main
 gh auth login --scopes admin:enterprise,admin:org,admin:org_hook,admin:repo_hook,repo,workflow,write:packages,user:email
 ```
 
+[`init-os.sh`](./.local/bin/init-os.sh) sets `autoMemoryReclaim=gradual` under
+`[experimental]` in the Windows `%UserProfile%\.wslconfig` file. WSL then
+reclaims cached memory gradually. The script keeps all other settings.
+
+The `wsl --shutdown` command stops all WSL distributions.
+To apply the setting after installation:
+
+1. Save your work in all WSL distributions.
+2. Run `wsl --shutdown` from Windows PowerShell.
+3. Reopen WSL.
+
 Only Rob should run this.  This is to update the repo.
 ```
 dotfiles push --set-upstream origin main
